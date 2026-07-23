@@ -11,6 +11,8 @@ export interface ProjectState {
   proxy: string;
   path: string;
   registeredAt: string;
+  pid?: number;
+  startedAt?: string;
 }
 
 export interface State {
@@ -82,4 +84,33 @@ export async function listProjects(): Promise<ProjectState[]> {
 export async function isPortAllocated(port: number): Promise<boolean> {
   const state = await loadState();
   return state.allocatedPorts.includes(port);
+}
+
+export async function setProjectRunning(projectPath: string, pid: number): Promise<void> {
+  const state = await loadState();
+  const project = state.projects[projectPath];
+  if (project) {
+    project.pid = pid;
+    project.startedAt = new Date().toISOString();
+    await saveState(state);
+  }
+}
+
+export async function setProjectStopped(projectPath: string): Promise<void> {
+  const state = await loadState();
+  const project = state.projects[projectPath];
+  if (project) {
+    delete project.pid;
+    delete project.startedAt;
+    await saveState(state);
+  }
+}
+
+export async function isProcessAlive(pid: number): Promise<boolean> {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
