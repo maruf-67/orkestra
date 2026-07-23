@@ -1,4 +1,9 @@
 import { execa } from "execa";
+import { spawnSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { getPlatform } from "../platform/index.js";
 
 export interface ExecResult {
@@ -22,6 +27,9 @@ export async function run(
       env: { ...process.env, ...options.env },
       shell: platform.shell,
       reject: false,
+      stdin: "inherit",
+      stdout: "pipe",
+      stderr: "pipe",
     });
     return {
       stdout: result.stdout,
@@ -37,6 +45,27 @@ export async function run(
   }
 }
 
+/**
+ * Write a file with sudo. Uses Node's native spawnSync so the terminal
+ * is properly inherited — sudo can prompt for the password directly.
+ */
+export async function sudoWriteFile(filePath: string, content: string): Promise<void> {
+  // 1. Write to a temp file (no sudo needed)
+  const tmpDir = await mkdtemp(join(tmpdir(), "orkestra-"));
+  const tmpFile = join(tmpDir, "tmpfile");
+  await writeFile(tmpFile, content, "utf-8");
+
+  // 2. Use native spawnSync with stdio: "inherit" — this properly passes
+  //    the terminal to sudo so it can prompt for the password
+  const result = spawnSync("sudo", ["cp", tmpFile, filePath], {
+    stdio: "inherit",
+  });
+
+  if (result.status !== 0) {
+    throw new Error(`Failed to write ${filePath}. Do you have sudo access?`);
+  }
+}
+
 export async function which(command: string): Promise<string | null> {
   const platform = getPlatform();
   const result = await execa("which", [command], {
@@ -46,7 +75,6 @@ export async function which(command: string): Promise<string | null> {
   if (result.exitCode === 0) {
     return result.stdout.trim();
   }
-  // Fallback for Windows
   if (platform.shell.includes("powershell")) {
     const winResult = await execa("where.exe", [command], {
       shell: platform.shell,

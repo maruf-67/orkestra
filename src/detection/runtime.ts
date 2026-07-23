@@ -8,7 +8,7 @@ const allProviders: RuntimeProvider[] = [
 ];
 
 export async function detectRuntime(preferred?: string): Promise<RuntimeProvider | null> {
-  if (preferred) {
+  if (preferred && preferred !== "auto") {
     const provider = allProviders.find((p) => p.name === preferred);
     if (provider && await provider.detect()) {
       return provider;

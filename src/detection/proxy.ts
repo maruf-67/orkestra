@@ -4,7 +4,7 @@ import { CaddyProxy } from "../providers/proxy/caddy.js";
 const allProviders: ProxyProvider[] = [new CaddyProxy()];
 
 export async function detectProxy(preferred?: string): Promise<ProxyProvider | null> {
-  if (preferred) {
+  if (preferred && preferred !== "auto") {
     const provider = allProviders.find((p) => p.name === preferred);
     if (provider && await provider.detect()) {
       return provider;

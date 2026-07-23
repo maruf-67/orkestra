@@ -39,7 +39,7 @@ export async function init(options: InitOptions) {
 
   // Generate defaults
   const projectName = basename(projectDir);
-  const defaultDomain = `${projectName}.test`;
+  const defaultDomain = `${projectName}.dev.com`;
   const defaultPort = framework?.port || 8000;
 
   // Interactive prompts

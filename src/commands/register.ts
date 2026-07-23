@@ -1,4 +1,5 @@
 import { resolve, basename } from "node:path";
+import { readFile } from "node:fs/promises";
 import { log, spinner, heading } from "../utils/logger.js";
 import { detectFramework } from "../detection/framework.js";
 import { detectProxy } from "../detection/proxy.js";
@@ -6,6 +7,7 @@ import { HostsFileProvider } from "../providers/hosts/hosts.js";
 import { registerProject, getProject } from "../state/store.js";
 import { findAvailablePort } from "../state/ports.js";
 import { loadConfig } from "../config/loader.js";
+import { addAllowedHost } from "../utils/host-config.js";
 import prompts from "prompts";
 
 interface RegisterOptions {
@@ -13,6 +15,39 @@ interface RegisterOptions {
   domain?: string;
   port?: number;
   proxy?: string;
+}
+
+async function detectPortFromProject(dir: string, frameworkName: string): Promise<number | null> {
+  // Try package.json scripts
+  if (["node.js", "next.js", "nuxt", "express", "fastify", "vite", "remix", "astro", "sveltekit"].includes(frameworkName)) {
+    try {
+      const pkg = JSON.parse(await readFile(resolve(dir, "package.json"), "utf-8"));
+      const devScript = pkg.scripts?.dev || pkg.scripts?.start || "";
+      const portMatch = devScript.match(/(?:--port|-p)\s+(\d+)/);
+      if (portMatch) return parseInt(portMatch[1]);
+      const portEnvMatch = devScript.match(/PORT=(\d+)/);
+      if (portEnvMatch) return parseInt(portEnvMatch[1]);
+    } catch {}
+  }
+
+  // Try composer.json (Laravel)
+  if (frameworkName === "laravel") {
+    try {
+      const composer = JSON.parse(await readFile(resolve(dir, "composer.json"), "utf-8"));
+      const serveScript = composer.scripts?.serve || "";
+      const portMatch = serveScript.match(/--port[= ](\d+)/);
+      if (portMatch) return parseInt(portMatch[1]);
+    } catch {}
+  }
+
+  // Try .env
+  try {
+    const env = await readFile(resolve(dir, ".env"), "utf-8");
+    const portMatch = env.match(/^PORT=(\d+)/m);
+    if (portMatch) return parseInt(portMatch[1]);
+  } catch {}
+
+  return null;
 }
 
 export async function register(options: RegisterOptions) {
@@ -31,25 +66,22 @@ export async function register(options: RegisterOptions) {
     spin.succeed(`Framework: ${framework.name} ${framework.version}`);
   } else {
     spin.fail("No framework detected");
-    log.warn("Continuing without framework detection...");
   }
 
-  // Determine domain
-  let domain = options.domain || config?.domain;
-  if (!domain) {
-    const defaultDomain = `${basename(projectDir)}.test`;
+  const projectName = config?.name || basename(projectDir);
+
+  // Auto-generate domain
+  let domain = options.domain || config?.domain || `${projectName}.dev.com`;
+
+  // Prompt only if no domain provided via flag or config
+  if (!options.domain && !config?.domain) {
     const response = await prompts({
       type: "text",
       name: "domain",
       message: "Domain name:",
-      initial: defaultDomain,
+      initial: domain,
     });
-    domain = response.domain;
-  }
-
-  if (!domain) {
-    log.error("Domain is required");
-    process.exit(1);
+    if (response.domain) domain = response.domain;
   }
 
   // Check if already registered
@@ -68,13 +100,15 @@ export async function register(options: RegisterOptions) {
     }
   }
 
-  // Determine port
+  // Auto-detect port from project files
   let port = options.port || config?.port;
   if (!port) {
-    port = framework?.port || 8000;
-    port = await findAvailablePort(port);
-    log.info(`Using port: ${port}`);
+    const detectedPort = await detectPortFromProject(projectDir, framework?.name || "");
+    port = detectedPort || framework?.port || 8000;
   }
+
+  // Ensure port is available
+  port = await findAvailablePort(port);
 
   // Detect proxy
   const proxySpin = spinner("Detecting proxy...");
@@ -82,13 +116,12 @@ export async function register(options: RegisterOptions) {
   const proxy = await detectProxy(options.proxy || config?.proxy);
   if (!proxy) {
     proxySpin.fail("No proxy detected");
-    log.warn("Skipping domain setup. Project will be available at:");
+    log.warn("Project available at:");
     log.plain(`  http://localhost:${port}`);
-    log.info("Install Caddy for local HTTPS domains: https://caddyserver.com/download");
+    log.info("Install Caddy for local HTTPS: https://caddyserver.com/download");
 
-    // Still register in state
     await registerProject({
-      name: basename(projectDir),
+      name: projectName,
       domain,
       port,
       framework: framework?.name || "unknown",
@@ -102,7 +135,7 @@ export async function register(options: RegisterOptions) {
 
   proxySpin.succeed(`Proxy: ${proxy.name}`);
 
-  // Update hosts file
+  // Update hosts file (needs sudo password)
   const hostsSpin = spinner("Updating hosts file...");
   hostsSpin.start();
   const hosts = new HostsFileProvider();
@@ -115,9 +148,19 @@ export async function register(options: RegisterOptions) {
   await proxy.register({ domain, port, ssl: config?.ssl ?? true });
   configSpin.succeed("Proxy configured");
 
+  // Allow domain in Vite/Nuxt dev server
+  const hostSpin = spinner("Configuring dev server...");
+  hostSpin.start();
+  const hostAdded = await addAllowedHost(projectDir, domain);
+  if (hostAdded) {
+    hostSpin.succeed(`Added ${domain} to allowed hosts`);
+  } else {
+    hostSpin.succeed("Dev server config unchanged");
+  }
+
   // Save state
   await registerProject({
-    name: basename(projectDir),
+    name: projectName,
     domain,
     port,
     framework: framework?.name || "unknown",

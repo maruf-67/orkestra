@@ -1,8 +1,6 @@
-import { readFile, writeFile, mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { getPlatform } from "../../platform/index.js";
-import { run } from "../../utils/exec.js";
+import { sudoWriteFile } from "../../utils/exec.js";
 import type { HostsProvider } from "../types.js";
 
 export class HostsFileProvider implements HostsProvider {
@@ -13,11 +11,7 @@ export class HostsFileProvider implements HostsProvider {
 
   private async writeHosts(content: string): Promise<void> {
     const platform = getPlatform();
-    // Write to temp file, then copy with sudo
-    const tmpDir = await mkdtemp(join(tmpdir(), "orkestra-hosts-"));
-    const tmpFile = join(tmpDir, "hosts");
-    await writeFile(tmpFile, content, "utf-8");
-    await run("cp", [tmpFile, platform.hostsFile], { sudo: true });
+    await sudoWriteFile(platform.hostsFile, content);
   }
 
   async add(domain: string, ip = "127.0.0.1"): Promise<void> {
