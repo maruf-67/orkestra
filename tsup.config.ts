@@ -1,0 +1,21 @@
+import { defineConfig } from "tsup";
+
+export default defineConfig([
+  {
+    entry: { cli: "src/cli.ts" },
+    format: ["esm"],
+    clean: true,
+    sourcemap: true,
+    splitting: false,
+    banner: { js: "#!/usr/bin/env node" },
+    noExternal: [],
+  },
+  {
+    entry: { index: "src/index.ts" },
+    format: ["esm"],
+    dts: true,
+    sourcemap: true,
+    splitting: false,
+    noExternal: [],
+  },
+]);
