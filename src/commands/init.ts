@@ -31,6 +31,8 @@ export async function init(options: InitOptions) {
     fwSpin.succeed(`Framework: ${framework.name} ${framework.version}`);
   } else {
     fwSpin.fail("No framework detected");
+    log.warn("No framework detected. You'll need to set startCommand in .orkestra.yml");
+    log.dim("Example: startCommand: \"pnpm dev\"");
   }
 
   // Detect package manager
@@ -41,6 +43,7 @@ export async function init(options: InitOptions) {
     pmSpin.succeed(`Package manager: ${pm.name}`);
   } else {
     pmSpin.fail("No package manager detected");
+    log.dim("Install pnpm, npm, yarn, or bun");
   }
 
   // Generate defaults

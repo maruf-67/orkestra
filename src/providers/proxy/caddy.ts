@@ -48,20 +48,41 @@ export class CaddyProxy implements ProxyProvider {
    */
   private async ensureMkcert(): Promise<void> {
     if (!await isCommandAvailable("mkcert")) {
+      let installResult;
+
       if (isWindows()) {
-        // Windows: Try chocolatey or winget
-        await run("choco", ["install", "mkcert", "-y"]);
+        // Windows: Try chocolatey
+        installResult = await run("choco", ["install", "mkcert", "-y"]);
       } else {
         const platform = getPlatform();
         if (platform.serviceManager === "systemctl") {
-          await run("sh", ["-c", "curl -fsSL https://mkcert.dev/install.sh | sudo sh"]);
+          // Linux: Try curl install script
+          installResult = await run("sh", ["-c", "curl -fsSL https://mkcert.dev/install.sh | sudo sh"]);
         } else if (platform.serviceManager === "launchctl") {
-          await run("brew", ["install", "mkcert"]);
+          // macOS: Try brew
+          installResult = await run("brew", ["install", "mkcert"]);
         }
       }
+
+      // Check if installation succeeded
+      if (!installResult || installResult.exitCode !== 0) {
+        throw new Error(
+          "mkcert is required for SSL certificates.\n" +
+          "Install manually: https://github.com/FiloSottile/mkcert#installation\n" +
+          "Or disable SSL in .orkestra.yml: ssl: false"
+        );
+      }
     }
+
     // Install the local CA into system trust store (idempotent)
-    await run("mkcert", ["-install"]);
+    const result = await run("mkcert", ["-install"]);
+    if (result.exitCode !== 0) {
+      throw new Error(
+        "Failed to install mkcert CA.\n" +
+        "Try running: mkcert -install\n" +
+        "Or disable SSL in .orkestra.yml: ssl: false"
+      );
+    }
   }
 
   /**

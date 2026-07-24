@@ -238,6 +238,15 @@ export async function up(options: UpOptions) {
   const projectName = config?.name || basename(projectDir);
   const logPath = getLogPath(projectDir, projectName);
 
+  // Check if command exists before spawning
+  const { isCommandAvailable } = await import("../utils/exec.js");
+  if (!await isCommandAvailable(execCmd)) {
+    serverSpin.fail(`Command not found: ${execCmd}`);
+    log.error(`Cannot start server: ${execCmd} is not installed.`);
+    log.dim(`Install ${execCmd} or set a different startCommand in .orkestra.yml`);
+    process.exit(1);
+  }
+
   const child = spawn(execCmd, execArgs, {
     cwd: projectDir,
     stdio: options.foreground ? "inherit" : "pipe",

@@ -8,6 +8,7 @@ import { findAvailablePort } from "../state/ports.js";
 import { loadConfig } from "../config/loader.js";
 import { OrkestraConfig } from "../config/schema.js";
 import { addAllowedHost } from "./host-config.js";
+import { log } from "../utils/logger.js";
 import type { FrameworkInfo } from "../providers/types.js";
 
 export interface RegistrationOptions {
@@ -105,8 +106,19 @@ export async function registerProjectAuto(
 
   // Detect and configure proxy
   const proxy = await detectProxy(options?.proxy || config?.proxy);
+
   if (proxy) {
     await proxy.register({ domain, port, ssl: config?.ssl ?? true });
+  } else {
+    // Warn when no proxy is found
+    log.warn("No proxy detected (Caddy, Nginx, Apache, or Traefik)");
+    log.dim("HTTPS URLs will not work without a reverse proxy.");
+    log.dim("Install Caddy: https://caddyserver.com/docs/install");
+    log.dim("");
+
+    if (config?.ssl) {
+      log.warn("SSL is enabled in config but requires a proxy. HTTP only.");
+    }
   }
 
   // Add allowed host for Vite/Nuxt
