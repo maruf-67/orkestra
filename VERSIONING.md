@@ -84,7 +84,7 @@
 
 ### v0.4.0 (Health, Multi-Project & Shell)
 **Branch:** `feat/health-multi` → `dev`
-**Status:** Merged to dev, testing in progress
+**Status:** Released
 
 **Features:**
 - `up --all` — Start all registered projects
@@ -112,20 +112,25 @@
 ---
 
 ### v1.0.0 (Documentation & Polish)
-**Branch:** `feat/docs-polish` (planned)
-**Status:** Planned
+**Branch:** `feat/docs-polish` → `dev`
+**Status:** Merged to dev, testing in progress
 
 **Features:**
-- Updated README with all commands
+- Updated README with all commands and examples
 - `--help` examples for every command
 - Better error messages with install instructions
-- Man page generation
-- ZSH/Bash completion scripts
+- ZSH/Bash/Fish completion scripts
+- `orkestra completions` command
 
 **Implementation:**
-- Commander.js built-in help customization
-- Error message templates with platform-specific install commands
-- `orkestra completion` command for shell completions
+- `src/commands/completions.ts` — Shell completion generator
+- Updated README.md with comprehensive documentation
+- Shell completions for ZSH, Bash, and Fish
+
+**Files Changed:**
+- `src/commands/completions.ts` — NEW: Shell completion scripts
+- `src/cli.ts` — Added completions command
+- `README.md` — Complete documentation rewrite
 
 ---
 
