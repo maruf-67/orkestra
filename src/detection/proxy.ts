@@ -2,9 +2,11 @@ import type { ProxyProvider } from "../providers/types.js";
 import { CaddyProxy } from "../providers/proxy/caddy.js";
 import { ApacheProxy } from "../providers/proxy/apache.js";
 import { NginxProxy } from "../providers/proxy/nginx.js";
+import { TraefikProxy } from "../providers/proxy/traefik.js";
 
 const allProviders: ProxyProvider[] = [
   new CaddyProxy(),
+  new TraefikProxy(),
   new NginxProxy(),
   new ApacheProxy(),
 ];

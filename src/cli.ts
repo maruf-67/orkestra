@@ -13,6 +13,9 @@ import { down } from "./commands/down.js";
 import { restart } from "./commands/restart.js";
 import { status } from "./commands/status.js";
 import { logs } from "./commands/logs.js";
+import { db } from "./commands/db.js";
+import { env } from "./commands/env.js";
+import { docker } from "./commands/docker.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -94,6 +97,29 @@ export function run() {
     .description("Open project in browser")
     .option("-d, --dir <path>", "Project directory")
     .action(open);
+
+  program
+    .command("db")
+    .description("Database management")
+    .option("-a, --action <action>", "Action: list, create, drop")
+    .option("-n, --name <name>", "Database name")
+    .option("-d, --dir <path>", "Project directory")
+    .action(db);
+
+  program
+    .command("env")
+    .description("Environment variable management")
+    .option("-s, --set <key=value>", "Set a variable")
+    .option("-g, --get <key>", "Get a variable")
+    .option("-d, --dir <path>", "Project directory")
+    .action(env);
+
+  program
+    .command("docker")
+    .description("Docker compose management")
+    .option("-a, --action <action>", "Action: list, up, down, status")
+    .option("-d, --dir <path>", "Project directory")
+    .action(docker);
 
   program.parse();
 }

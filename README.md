@@ -2,75 +2,23 @@
 
 **A cross-platform development workspace manager.**
 
-Orkestra orchestrates your local development environment — reverse proxy, hosts file, SSL certificates, runtime detection, and project registration — into a single CLI. No more manually editing Caddyfiles, `/etc/hosts`, or remembering which port each project uses.
+Orkestra orchestrates your local development environment — reverse proxy, hosts file, SSL certificates, runtime detection, process management, and project registration — into a single CLI.
 
 ---
 
 ## Installation
 
-### Prerequisites
-
-- **Node.js >= 22** (required)
-- **A reverse proxy** (Caddy recommended — auto-installed if missing)
-- **mkcert** (for trusted local SSL — installed automatically)
-
-### Install
-
 ```bash
 npm install -g orkestra
-```
-
-Or with pnpm:
-
-```bash
+# or
 pnpm install -g orkestra
 ```
 
-### Verify Installation
+### Verify
 
 ```bash
 orkestra --version
 orkestra doctor
-```
-
-The `doctor` command checks your system and shows what's available:
-
-```
-Orkestra Doctor
-───────────────
-i OS: Linux
-
-Languages & Frameworks
-──────────────────────
-  Languages   php, javascript, python, go, rust
-  Frameworks  laravel, symfony, next.js, nuxt, remix, astro, ...
-
-Runtime Managers
-────────────────
-  mise    ✓
-  system  ✓
-
-Proxies
-───────
-  caddy   ✓
-  nginx   ✗
-  apache  ✓
-
-Package Managers
-────────────────
-  pnpm  ✓
-  npm   ✓
-
-Databases
-─────────
-  postgresql  ✓
-  mysql       ✓
-  redis       ✗
-
-Recommendations
-───────────────
-✓ Proxy: caddy
-✓ Runtime: mise
 ```
 
 ---
@@ -78,21 +26,12 @@ Recommendations
 ## Quick Start
 
 ```bash
-# 1. Go to your project
 cd ~/projects/my-app
-
-# 2. Start everything (auto-detects framework, registers, starts server)
-orkestra up
-
-# 3. Open in browser
-orkestra open
-
-# 4. When done, stop and clean up
-orkestra down
-orkestra remove
+orkestra up           # register + start server
+orkestra open         # open in browser
+orkestra down         # stop server
+orkestra remove       # clean everything
 ```
-
-That's it. One command to start, one to stop.
 
 ---
 
@@ -111,6 +50,9 @@ That's it. One command to start, one to stop.
 | `orkestra list` | List all registered projects |
 | `orkestra remove` | Remove project and clean up everything |
 | `orkestra logs` | View dev server logs |
+| `orkestra db` | Database management |
+| `orkestra env` | Environment variable management |
+| `orkestra docker` | Docker compose management |
 
 ---
 
@@ -118,67 +60,22 @@ That's it. One command to start, one to stop.
 
 ### `orkestra up`
 
-Starts your dev server. Auto-detects the framework and the right command to run.
+Starts your dev server. Auto-detects framework and command.
 
 ```bash
 orkestra up
 orkestra up --port 3000
-orkestra up --dir /path/to/project
-```
-
-What it does:
-1. Detects your framework (Laravel, Next.js, Nuxt, Go, Rust, etc.)
-2. Finds or generates an SSL certificate (via mkcert)
-3. Updates `/etc/hosts` with the domain
-4. Configures the reverse proxy (Caddy/Nginx/Apache)
-5. Starts the dev server in the background
-6. Adds domain to Vite/Nuxt `allowedHosts`
-
-Output:
-```
-Start Dev Server
-────────────────
-✓ Framework: nuxt ^4.5.0
-✓ Registered as my-app.dev.com
-✓ Server started (PID: 12345)
-
-Summary
-───────
-  PID:      12345
-  URL:      https://my-app.dev.com
-  Local:    http://localhost:3000
-  Framework: nuxt
-  Port:     3000
-
-Stop with: orkestra down
 ```
 
 ### `orkestra down`
-
-Stops the dev server.
 
 ```bash
 orkestra down          # stop current project
 orkestra down --all    # stop all running servers
 ```
 
-### `orkestra restart`
-
-Restarts the dev server (stop + start).
-
-```bash
-orkestra restart
-```
-
 ### `orkestra status`
 
-Shows all registered projects and whether they're running.
-
-```bash
-orkestra status
-```
-
-Output:
 ```
 Project Status
 ──────────────
@@ -190,63 +87,40 @@ Project Status
   Framework  nuxt
   Proxy      caddy
   URL        https://my-app.dev.com
-  PID        12345
 
   ○ api-service
   Status     stopped
   Domain     api.dev.com
   Port       8080
   Framework  go
-  Proxy      caddy
-  URL        -
-  PID        -
-
-2 project(s) registered
 ```
 
-### `orkestra register`
-
-Registers a project with the reverse proxy and hosts file.
+### `orkestra db`
 
 ```bash
-orkestra register
-orkestra register --domain custom.dev.com --port 8080
-orkestra register --proxy nginx
+orkestra db                    # show database status
+orkestra db create mydb        # create database
+orkestra db drop mydb          # drop database
+orkestra db list               # list detected databases
 ```
 
-### `orkestra remove`
-
-Removes everything: hosts entry, proxy config, SSL certs, `.orkestra.yml`, and state.
+### `orkestra env`
 
 ```bash
-orkestra remove
+orkestra env                          # list all env vars
+orkestra env --get DATABASE_URL       # get a variable
+orkestra env --set PORT=3000          # set a variable
 ```
 
-### `orkestra open`
+Sensitive values (passwords, tokens) are auto-masked in output.
 
-Opens the project URL in your default browser.
+### `orkestra docker`
 
 ```bash
-orkestra open
-```
-
-### `orkestra init`
-
-Creates `.orkestra.yml` in the project directory.
-
-```bash
-orkestra init
-```
-
-Generated config:
-```yaml
-name: my-app
-framework: nuxt
-proxy: auto
-runtime: auto
-port: 3000
-domain: my-app.dev.com
-ssl: true
+orkestra docker              # show docker services
+orkestra docker up           # start all services
+orkestra docker down         # stop all services
+orkestra docker status       # show running containers
 ```
 
 ---
@@ -255,21 +129,9 @@ ssl: true
 
 | Language | Framework | Default Port |
 |----------|-----------|--------------|
-| PHP | Laravel | 8000 |
-| PHP | Symfony | 8000 |
-| JavaScript | Next.js | 3000 |
-| JavaScript | Nuxt | 3000 |
-| JavaScript | Remix | 3000 |
-| JavaScript | Astro | 4321 |
-| JavaScript | SvelteKit | 5173 |
-| JavaScript | Vite | 5173 |
-| JavaScript | Express | 3000 |
-| JavaScript | Fastify | 3000 |
-| JavaScript | Node.js | 3000 |
-| Python | FastAPI | 8000 |
-| Python | Flask | 5000 |
-| Python | Django | 8000 |
-| Python | Python (generic) | 8000 |
+| PHP | Laravel, Symfony | 8000 |
+| JavaScript | Next.js, Nuxt, Remix, Astro, SvelteKit, Vite, Express, Fastify | 3000-5173 |
+| Python | FastAPI, Flask, Django | 5000-8000 |
 | Go | Go | 8080 |
 | Rust | Rust | 8080 |
 
@@ -277,34 +139,40 @@ ssl: true
 
 ## Supported Proxies
 
-| Proxy | Priority | SSL | Auto-detect |
-|-------|----------|-----|-------------|
-| Caddy | 100 | mkcert (trusted) | `caddy version` |
-| Nginx | 80 | snakeoil cert | `nginx -v` |
-| Apache | 60 | snakeoil cert | `apache2 -v` |
+| Proxy | Priority | SSL |
+|-------|----------|-----|
+| Caddy | 100 | mkcert (trusted) |
+| Traefik | 90 | ACME/Let's Encrypt |
+| Nginx | 80 | snakeoil cert |
+| Apache | 60 | snakeoil cert |
 
-Set proxy manually:
 ```bash
 orkestra register --proxy nginx
 ```
 
-Or in `.orkestra.yml`:
-```yaml
-proxy: nginx
-```
+---
+
+## Supported Runtimes
+
+| Runtime | Priority |
+|---------|----------|
+| mise | 100 |
+| nvm | 80 |
+| fnm | 70 |
+| asdf | 60 |
+| volta | 50 |
+| system | 10 |
 
 ---
 
 ## SSL Certificates
 
-Orkestra uses **mkcert** to generate locally-trusted SSL certificates:
+Orkestra uses **mkcert** for locally-trusted SSL:
 
-1. mkcert installs a local Certificate Authority (CA)
-2. The CA is added to your system's trust store
-3. Certificates are generated for each domain
-4. Browsers trust them — **no warnings**
-
-If mkcert is not installed, Orkestra installs it automatically.
+1. Installs a local Certificate Authority
+2. Adds CA to system trust store
+3. Generates certificates per domain
+4. Browsers trust them — no warnings
 
 ---
 
@@ -312,21 +180,19 @@ If mkcert is not installed, Orkestra installs it automatically.
 
 ### `.orkestra.yml`
 
-Created by `orkestra init` or automatically during `orkestra register`:
-
 ```yaml
-name: my-app          # Project name
-framework: nuxt       # Auto-detected
-proxy: auto           # auto | caddy | nginx | apache
-runtime: auto         # auto | mise | system
-port: 3000            # Dev server port
-domain: my-app.dev.com # Local domain
-ssl: true             # Enable HTTPS
+name: my-app
+framework: nuxt
+proxy: auto          # auto | caddy | nginx | apache | traefik
+runtime: auto        # auto | mise | nvm | fnm | asdf | volta | system
+port: 3000
+domain: my-app.dev.com
+ssl: true
 ```
 
 ### State
 
-Orkestra stores state in `~/.orkestra/state.json`:
+Stored in `~/.orkestra/state.json`:
 
 ```json
 {
@@ -337,11 +203,9 @@ Orkestra stores state in `~/.orkestra/state.json`:
       "port": 3000,
       "framework": "nuxt",
       "proxy": "caddy",
-      "pid": 12345,
-      "startedAt": "2026-07-24T10:00:00Z"
+      "pid": 12345
     }
-  },
-  "allocatedPorts": [3000, 8080]
+  }
 }
 ```
 
@@ -349,100 +213,43 @@ Orkestra stores state in `~/.orkestra/state.json`:
 
 ## Platform Support
 
-| Platform | Hosts File | Proxy | SSL |
-|----------|-----------|-------|-----|
-| Linux | `/etc/hosts` | Caddy/Nginx/Apache | mkcert |
-| macOS | `/etc/hosts` | Caddy/Nginx/Apache | mkcert |
-| Windows | `C:\Windows\System32\drivers\etc\hosts` | Caddy | mkcert |
+| Platform | Hosts File | Proxies |
+|----------|-----------|---------|
+| Linux | `/etc/hosts` | Caddy, Nginx, Apache, Traefik |
+| macOS | `/etc/hosts` | Caddy, Nginx, Apache, Traefik |
+| Windows | `C:\Windows\System32\drivers\etc\hosts` | Caddy |
 
 ---
 
-## How It Works
+## Plugin SDK
 
-```
-orkestra up
-    │
-    ├── 1. Detect framework (Laravel, Next.js, Go, etc.)
-    ├── 2. Find or generate SSL certificate (mkcert)
-    ├── 3. Update /etc/hosts with domain
-    ├── 4. Configure reverse proxy (Caddy)
-    ├── 5. Start dev server in background
-    └── 6. Add domain to Vite/Nuxt allowedHosts
+Create custom providers:
+
+```js
+// ~/.orkestra/plugins/my-proxy/index.js
+module.exports = {
+  proxy: {
+    name: "my-proxy",
+    priority: 50,
+    detect: async () => true,
+    register: async (config) => { /* ... */ },
+    unregister: async (domain) => { /* ... */ },
+    reload: async () => { /* ... */ }
+  }
+}
 ```
 
 ---
 
 ## Troubleshooting
 
-### "Permission denied" on hosts file
+**Permission denied on hosts file** — Orkestra needs sudo. You'll be prompted.
 
-Orkestra needs sudo to modify `/etc/hosts`. You'll be prompted for your password.
+**Host not allowed** — Add to `server.allowedHosts` in vite.config or nuxt.config.
 
-### "This host is not allowed"
+**SSL not trusted** — Run `mkcert -install`.
 
-Orkestra auto-adds the domain to `server.allowedHosts` in your Vite/Nuxt config. If it doesn't work, add manually:
-
-```js
-// nuxt.config.ts or vite.config.ts
-export default defineNuxtConfig({
-  vite: {
-    server: {
-      allowedHosts: ["my-app.dev.com"]
-    }
-  }
-})
-```
-
-### SSL certificate not trusted
-
-Run:
-```bash
-mkcert -install
-```
-
-This installs the local CA into your system trust store.
-
-### Port already in use
-
-Orkestra automatically finds the next available port. You can also specify one:
-
-```bash
-orkestra up --port 4000
-```
-
-### Caddy not starting
-
-Check the config:
-```bash
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl status caddy
-```
-
----
-
-## Typical Workflow
-
-```bash
-# Start your day
-cd ~/projects/my-app
-orkestra up
-
-# Work on your project
-# Server is running at https://my-app.dev.com
-
-# Check status
-orkestra status
-
-# Restart after config changes
-orkestra restart
-
-# Stop for the day
-orkestra down
-
-# Switch to another project
-cd ~/projects/api-service
-orkestra up
-```
+**Port in use** — Orkestra auto-finds next available port, or specify `--port`.
 
 ---
 

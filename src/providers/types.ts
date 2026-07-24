@@ -60,3 +60,14 @@ export interface ProviderManifest {
   name: string;
   priority: number;
 }
+
+export interface ProcessProvider {
+  readonly name: string;
+  detect(): Promise<boolean>;
+  start(name: string, command: string, args: string[], env?: Record<string, string>): Promise<number>;
+  stop(name: string): Promise<void>;
+  delete(name: string): Promise<void>;
+  restart(name: string): Promise<void>;
+  list(): Promise<Array<{ name: string; pid: number; status: string; port?: number }>>;
+  logs(name: string, lines: number): Promise<string>;
+}
