@@ -224,11 +224,81 @@ complete -c orkestra -n __orkestra_using_command register -l proxy -d 'Proxy pro
 complete -c orkestra -n __orkestra_using_command shell -l dir -d 'Project directory' -r
 
 # completions options
-complete -c orkestra -n __orkestra_using_command completions -l shell -d 'Shell type' -xa 'zsh bash fish'
+complete -c orkestra -n __orkestra_using_command completions -l shell -d 'Shell type' -xa 'zsh bash fish powershell'
 `;
 
+function getPowerShellCompletions(): string {
+  return `# PowerShell completions for orkestra
+
+$OrkestraCommands = @(
+    'doctor',
+    'init',
+    'remove',
+    'list',
+    'up',
+    'down',
+    'restart',
+    'status',
+    'logs',
+    'open',
+    'db',
+    'env',
+    'docker',
+    'shell',
+    'completions'
+)
+
+$OrkestraOptions = @{
+    'up'         = @('--dir', '--port', '--foreground', '--all')
+    'down'       = @('--dir', '--all')
+    'status'     = @('--json', '--verbose', '--watch')
+    'logs'       = @('--dir', '--follow', '--since', '--stream', '--limit', '--list')
+    'init'       = @('--dir', '--domain', '--port', '--proxy')
+    'register'   = @('--dir', '--domain', '--port', '--proxy')
+    'shell'      = @('--dir')
+    'completions' = @('--shell')
+    'db'         = @('--action', '--name', '--dir')
+    'env'        = @('--set', '--get', '--dir')
+    'docker'     = @('--action', '--dir')
+}
+
+Register-ArgumentCompleter -CommandName 'orkestra' -ScriptBlock {
+    param($commandName, $commandAst, $cursorPosition)
+
+    $tokens = $commandAst.Extent.Text.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+
+    if ($tokens.Count -le 1) {
+        return $OrkestraCommands | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new(
+                $_,
+                $_,
+                'ParameterValue',
+                $_
+            )
+        }
+    }
+
+    $command = $tokens[1]
+    $lastToken = $tokens[-1]
+
+    if ($OrkestraOptions.ContainsKey($command)) {
+        return $OrkestraOptions[$command] | Where-Object { $_ -like "$lastToken*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new(
+                $_,
+                $_,
+                'ParameterValue',
+                $_
+            )
+        }
+    }
+
+    return @()
+}
+`;
+}
+
 export function completions(options: CompletionsOptions) {
-  const shell = options.shell || process.env.SHELL?.split("/").pop() || "bash";
+  const shell = options.shell || process.env.SHELL?.split("/").pop() || "powershell";
 
   let script: string;
 
@@ -238,6 +308,9 @@ export function completions(options: CompletionsOptions) {
       break;
     case "fish":
       script = FISH_COMPLETIONS;
+      break;
+    case "powershell":
+      script = getPowerShellCompletions();
       break;
     case "bash":
     default:

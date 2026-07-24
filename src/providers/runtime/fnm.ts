@@ -1,5 +1,5 @@
 import type { RuntimeProvider, RuntimeInfo } from "../types.js";
-import { run, isCommandAvailable } from "../../utils/exec.js";
+import { run, isCommandAvailable, which } from "../../utils/exec.js";
 
 export class FnmRuntime implements RuntimeProvider {
   readonly name = "fnm";
@@ -14,11 +14,12 @@ export class FnmRuntime implements RuntimeProvider {
     if (result.exitCode !== 0) return null;
 
     const version = result.stdout.trim().replace(/^v/, "");
-    const pathResult = await run("fnm", ["exec", "--using=current", "which", "node"]);
+    // Use global which() instead of running 'which' directly
+    const path = await which("node");
     return {
       name: "node",
       version,
-      path: pathResult.stdout.trim(),
+      path: path || "",
     };
   }
 

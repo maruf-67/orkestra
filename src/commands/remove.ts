@@ -7,7 +7,7 @@ import { HostsFileProvider } from "../providers/hosts/hosts.js";
 import { getProject, unregisterProject } from "../state/store.js";
 import { detectProxy } from "../detection/proxy.js";
 import { run } from "../utils/exec.js";
-import { loadConfig } from "../config/loader.js";
+import { isWindows } from "../platform/index.js";
 
 interface RemoveOptions {
   dir?: string;
@@ -113,14 +113,26 @@ async function removeCerts(domain: string): Promise<boolean> {
     }
   }
 
-  // Remove from /etc/caddy/certs/ (needs sudo)
-  const caddyCertDir = "/etc/caddy/certs";
+  // Remove from Caddy cert directory
+  const caddyCertDir = isWindows()
+    ? join(homedir(), "AppData", "Roaming", "Caddy", "certs")
+    : "/etc/caddy/certs";
+
   for (const ext of [".pem", "-key.pem"]) {
-    const file = `${caddyCertDir}/${domain}${ext}`;
-    try {
-      await run("sudo", ["rm", "-f", file]);
-      removed = true;
-    } catch {}
+    const file = join(caddyCertDir, `${domain}${ext}`);
+    if (isWindows()) {
+      // Windows: No sudo needed
+      if (existsSync(file)) {
+        await unlink(file);
+        removed = true;
+      }
+    } else {
+      // Unix: Needs sudo
+      try {
+        await run("sudo", ["rm", "-f", file]);
+        removed = true;
+      } catch {}
+    }
   }
 
   return removed;

@@ -1,5 +1,5 @@
 import type { RuntimeProvider, RuntimeInfo } from "../types.js";
-import { run, isCommandAvailable } from "../../utils/exec.js";
+import { run, isCommandAvailable, which } from "../../utils/exec.js";
 
 export class AsdfRuntime implements RuntimeProvider {
   readonly name = "asdf";
@@ -14,11 +14,11 @@ export class AsdfRuntime implements RuntimeProvider {
     if (result.exitCode !== 0) return null;
 
     const version = result.stdout.trim().split("\n")[0];
-    const pathResult = await run("which", ["node"]);
+    const path = await which("node");
     return {
       name: "node",
       version,
-      path: pathResult.stdout.trim(),
+      path: path || "",
     };
   }
 
