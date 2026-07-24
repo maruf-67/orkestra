@@ -3,27 +3,35 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { log, spinner, heading } from "../utils/logger.js";
 import { detectFramework } from "../detection/framework.js";
-import { getProject, setProjectRunning, isProcessAlive, registerProject } from "../state/store.js";
+import { getProject, setProjectRunning, isProcessAlive } from "../state/store.js";
 import { loadConfig } from "../config/loader.js";
 import { findAvailablePort } from "../state/ports.js";
-import { detectProxy } from "../detection/proxy.js";
-import { HostsFileProvider } from "../providers/hosts/hosts.js";
-import prompts from "prompts";
+import { registerProjectAuto } from "../utils/registration.js";
+import type { OrkestraConfig } from "../config/schema.js";
 
 interface UpOptions {
   dir?: string;
   port?: number;
 }
 
-async function getStartCommand(dir: string, frameworkName: string): Promise<{ cmd: string; args: string[] } | null> {
-  // Try package.json scripts
+async function getStartCommand(
+  dir: string,
+  frameworkName: string,
+  config?: OrkestraConfig | null
+): Promise<{ cmd: string; args: string[] } | null> {
+  // 1. Check config.startCommand first
+  if (config?.startCommand) {
+    const parts = config.startCommand.split(/\s+/);
+    return { cmd: parts[0], args: parts.slice(1) };
+  }
+
+  // 2. Try package.json scripts
   if (["node.js", "next.js", "nuxt", "express", "fastify", "vite", "remix", "astro", "sveltekit"].includes(frameworkName)) {
     try {
       const pkg = JSON.parse(await readFile(resolve(dir, "package.json"), "utf-8"));
       const scripts = pkg.scripts || {};
 
       if (scripts.dev) {
-        // Parse the dev script to extract command and args
         const parts = scripts.dev.split(/\s+/);
         return { cmd: parts[0], args: parts.slice(1) };
       }
@@ -34,7 +42,7 @@ async function getStartCommand(dir: string, frameworkName: string): Promise<{ cm
     } catch {}
   }
 
-  // Try composer.json scripts (Laravel)
+  // 3. Try composer.json scripts (Laravel)
   if (frameworkName === "laravel") {
     try {
       const composer = JSON.parse(await readFile(resolve(dir, "composer.json"), "utf-8"));
@@ -46,17 +54,17 @@ async function getStartCommand(dir: string, frameworkName: string): Promise<{ cm
     } catch {}
   }
 
-  // Go
+  // 4. Go
   if (frameworkName === "go") {
     return { cmd: "go", args: ["run", "."] };
   }
 
-  // Rust
+  // 5. Rust
   if (frameworkName === "rust") {
     return { cmd: "cargo", args: ["run"] };
   }
 
-  // Python
+  // 6. Python
   if (["fastapi", "flask", "django"].includes(frameworkName)) {
     if (frameworkName === "fastapi") {
       return { cmd: "uvicorn", args: ["main:app", "--reload"] };
@@ -85,46 +93,31 @@ export async function up(options: UpOptions) {
     return;
   }
 
-  // Auto-register if not registered
+  // Load config
   const config = await loadConfig(projectDir);
-  const projectName = config?.name || basename(projectDir);
-  let domain = existing?.domain || config?.domain || `${projectName}.dev.com`;
+
+  // Auto-register if not registered
+  let domain = existing?.domain;
   let port = options.port || existing?.port;
 
   if (!existing) {
     const regSpin = spinner("Auto-registering project...");
     regSpin.start();
 
-    const framework = await detectFramework(projectDir);
-    if (!port) {
-      port = framework?.port || 3000;
-      port = await findAvailablePort(port);
+    try {
+      const result = await registerProjectAuto(projectDir, {
+        port,
+      });
+      domain = result.project.domain;
+      port = result.project.port;
+      regSpin.succeed(`Registered as ${domain}`);
+    } catch (error) {
+      regSpin.fail("Auto-registration failed");
+      throw error;
     }
-
-    // Update hosts
-    const hosts = new HostsFileProvider();
-    await hosts.add(domain);
-
-    // Update proxy
-    const proxy = await detectProxy(config?.proxy);
-    if (proxy) {
-      await proxy.register({ domain, port, ssl: config?.ssl ?? true });
-    }
-
-    await registerProject({
-      name: projectName,
-      domain,
-      port,
-      framework: framework?.name || "unknown",
-      proxy: proxy?.name || "none",
-      path: projectDir,
-      registeredAt: new Date().toISOString(),
-    });
-
-    regSpin.succeed(`Registered as ${domain}`);
   }
 
-  // Detect framework
+  // Detect framework (once)
   const spin = spinner("Detecting framework...");
   spin.start();
   const framework = await detectFramework(projectDir);
@@ -136,11 +129,11 @@ export async function up(options: UpOptions) {
     process.exit(1);
   }
 
-  // Get start command
-  const command = await getStartCommand(projectDir, framework.name);
+  // Get start command (supports config.startCommand override)
+  const command = await getStartCommand(projectDir, framework.name, config);
   if (!command) {
     log.error(`Don't know how to start a ${framework.name} project.`);
-    log.info("Add a 'dev' script to your package.json or specify the command manually.");
+    log.info("Add a 'dev' script to your package.json, or set 'startCommand' in .orkestra.yml.");
     process.exit(1);
   }
 
