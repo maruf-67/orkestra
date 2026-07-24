@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { doctor } from "./commands/doctor.js";
-import { register } from "./commands/register.js";
 import { remove } from "./commands/remove.js";
 import { list } from "./commands/list.js";
 import { init } from "./commands/init.js";
@@ -39,22 +38,16 @@ export function run() {
 
   program
     .command("init")
-    .description("Initialize a project with .orkestra.yml config")
-    .option("-d, --dir <path>", "Project directory")
-    .action(init);
-
-  program
-    .command("register")
-    .description("Register project with proxy and hosts")
+    .description("Initialize and register project with proxy, hosts, and SSL")
     .option("-d, --dir <path>", "Project directory")
     .option("--domain <domain>", "Domain name")
     .option("--port <port>", "Dev server port", parseInt)
     .option("--proxy <proxy>", "Proxy provider (caddy, apache, nginx)")
-    .action(register);
+    .action(init);
 
   program
     .command("remove")
-    .description("Remove project from proxy, hosts, certs, and config")
+    .description("Remove project from proxy, hosts, certs, logs, and config")
     .option("-d, --dir <path>", "Project directory")
     .action(remove);
 

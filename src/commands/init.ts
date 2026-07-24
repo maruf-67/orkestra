@@ -1,21 +1,27 @@
-import { resolve } from "node:path";
-import { writeFile } from "node:fs/promises";
+import { resolve, basename, join } from "node:path";
+import { writeFile, readFile, appendFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { log, spinner, heading } from "../utils/logger.js";
 import { detectFramework } from "../detection/framework.js";
 import { detectPackageManager } from "../detection/package-manager.js";
-import { findAvailablePort } from "../state/ports.js";
-import { basename } from "node:path";
+import { registerProjectAuto, detectPortFromProject } from "../utils/registration.js";
+import { getProject } from "../state/store.js";
 import prompts from "prompts";
 
 interface InitOptions {
   dir?: string;
+  domain?: string;
+  port?: number;
+  proxy?: string;
 }
 
 export async function init(options: InitOptions) {
   const projectDir = resolve(options.dir || process.cwd());
 
   heading("Initialize Project");
+
+  // Check if already registered
+  const existing = await getProject(projectDir);
 
   // Detect framework
   const fwSpin = spinner("Detecting framework...");
@@ -40,50 +46,53 @@ export async function init(options: InitOptions) {
   // Generate defaults
   const projectName = basename(projectDir);
   const defaultDomain = `${projectName}.dev.com`;
-  const defaultPort = framework?.port || 8000;
+  const defaultPort = await detectPortFromProject(projectDir, framework?.name || "") || framework?.port || 3000;
 
-  // Interactive prompts
-  const response = await prompts([
-    {
-      type: "text",
-      name: "name",
-      message: "Project name:",
-      initial: projectName,
-    },
-    {
-      type: "text",
-      name: "domain",
-      message: "Domain name:",
-      initial: defaultDomain,
-    },
-    {
-      type: "number",
-      name: "port",
-      message: "Dev server port:",
-      initial: defaultPort,
-    },
-    {
-      type: "confirm",
-      name: "ssl",
-      message: "Enable SSL?",
-      initial: true,
-    },
-  ]);
+  // Interactive prompts (skip if options provided)
+  let name = projectName;
+  let domain = options.domain || defaultDomain;
+  let port = options.port || defaultPort;
+  let ssl = true;
 
-  // Generate config
-  const config = {
-    name: response.name,
-    framework: framework?.name || "unknown",
-    proxy: "auto",
-    runtime: "auto",
-    port: response.port,
-    domain: response.domain,
-    ssl: response.ssl,
-  };
+  if (!options.domain || !options.port) {
+    const response = await prompts([
+      {
+        type: options.domain ? null : "text",
+        name: "name",
+        message: "Project name:",
+        initial: projectName,
+      },
+      {
+        type: options.domain ? null : "text",
+        name: "domain",
+        message: "Domain name:",
+        initial: defaultDomain,
+      },
+      {
+        type: options.port ? null : "number",
+        name: "port",
+        message: "Dev server port:",
+        initial: defaultPort,
+      },
+      {
+        type: "confirm",
+        name: "ssl",
+        message: "Enable SSL?",
+        initial: true,
+      },
+    ]);
 
-  // Write config file
-  const configPath = resolve(projectDir, ".orkestra.yml");
-  if (existsSync(configPath)) {
+    if (response.name) name = response.name;
+    if (response.domain) domain = response.domain;
+    if (response.port) port = response.port;
+    if (response.ssl !== undefined) ssl = response.ssl;
+  }
+
+  // Create .orkestra.yml
+  const configPath = join(projectDir, ".orkestra.yml");
+  const configExists = existsSync(configPath);
+
+  if (configExists && !existing) {
     const overwrite = await prompts({
       type: "confirm",
       name: "value",
@@ -96,11 +105,71 @@ export async function init(options: InitOptions) {
     }
   }
 
+  const config = {
+    name,
+    framework: framework?.name || "unknown",
+    proxy: "auto",
+    runtime: "auto",
+    port,
+    domain,
+    ssl,
+  };
+
   const yaml = generateYaml(config);
   await writeFile(configPath, yaml, "utf-8");
-
   log.success(".orkestra.yml created!");
-  log.info("Run `orkestra register` to register with your proxy.");
+
+  // Add .orkestra to .gitignore
+  await addToGitignore(projectDir);
+
+  // Register with proxy, hosts, etc.
+  const regSpin = spinner("Registering project...");
+  regSpin.start();
+
+  try {
+    const result = await registerProjectAuto(projectDir, {
+      domain,
+      port,
+      proxy: options.proxy,
+    });
+
+    regSpin.succeed("Project registered successfully!");
+
+    heading("Summary");
+    log.plain(`  Domain:    https://${result.project.domain}`);
+    log.plain(`  Port:      ${result.project.port}`);
+    log.plain(`  Language:  ${result.framework?.language || "unknown"}`);
+    log.plain(`  Framework: ${result.framework?.name || "unknown"}`);
+    log.plain(`  Proxy:     ${result.project.proxy}`);
+    log.plain("");
+    log.dim("Start with: orkestra up");
+  } catch (error) {
+    regSpin.fail("Registration failed");
+    throw error;
+  }
+}
+
+async function addToGitignore(projectDir: string): Promise<void> {
+  const gitignorePath = join(projectDir, ".gitignore");
+  const entry = ".orkestra";
+
+  try {
+    let content = "";
+    if (existsSync(gitignorePath)) {
+      content = await readFile(gitignorePath, "utf-8");
+    }
+
+    // Check if already in gitignore
+    if (content.includes(entry)) {
+      return;
+    }
+
+    // Add entry
+    const separator = content.endsWith("\n") ? "" : "\n";
+    const newContent = content + separator + "\n# Orkestra\n" + entry + "\n";
+    await writeFile(gitignorePath, newContent, "utf-8");
+    log.dim("Added .orkestra to .gitignore");
+  } catch {}
 }
 
 function generateYaml(config: {
