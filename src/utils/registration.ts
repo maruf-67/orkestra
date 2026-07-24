@@ -32,7 +32,8 @@ export async function detectPortFromProject(dir: string, frameworkName: string):
     try {
       const pkg = JSON.parse(await readFile(resolve(dir, "package.json"), "utf-8"));
       const devScript = pkg.scripts?.dev || pkg.scripts?.start || "";
-      const portMatch = devScript.match(/(?:--port|-p)\s+(\d+)/);
+      // Match --port=3007, --port 3007, -p 3007, -p3007
+      const portMatch = devScript.match(/(?:--port=?|-p)\s*(\d+)/);
       if (portMatch) return parseInt(portMatch[1]);
       const portEnvMatch = devScript.match(/PORT=(\d+)/);
       if (portEnvMatch) return parseInt(portEnvMatch[1]);

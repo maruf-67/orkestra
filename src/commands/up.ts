@@ -18,6 +18,21 @@ interface UpOptions {
   all?: boolean;
 }
 
+/**
+ * Check if a port is occupied by another process.
+ */
+async function isPortOccupied(port: number): Promise<boolean> {
+  const { createServer } = await import("node:net");
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.unref();
+    server.on("error", () => resolve(true));
+    server.listen(port, "127.0.0.1", () => {
+      server.close(() => resolve(false));
+    });
+  });
+}
+
 async function getStartCommand(
   dir: string,
   frameworkName: string,
@@ -130,9 +145,11 @@ export async function up(options: UpOptions) {
   // Load config
   const config = await loadConfig(projectDir);
 
+  // Port priority: CLI flag > config > existing state > auto-detect
+  let port = options.port || config?.port || existing?.port;
+
   // Auto-register if not registered
   let domain = existing?.domain;
-  let port = options.port || existing?.port;
 
   if (!existing) {
     const regSpin = spinner("Auto-registering project...");
@@ -171,11 +188,18 @@ export async function up(options: UpOptions) {
     process.exit(1);
   }
 
-  // Ensure port is set
+  // Ensure port is set (priority: CLI > config > existing > framework default)
   if (!port) {
-    port = framework.port;
+    port = config?.port || framework.port;
   }
-  port = await findAvailablePort(port);
+
+  // Only find available port if the configured port is actually in use by ANOTHER process
+  // (not by our own stale PID)
+  const isPortInUse = await isPortOccupied(port);
+  if (isPortInUse) {
+    log.warn(`Port ${port} is in use by another process`);
+    port = await findAvailablePort(port);
+  }
 
   // Determine package manager for npx/pnpm exec
   let execCmd = command.cmd;
