@@ -101,7 +101,8 @@ _orkestra() {
 _orkestra "$@"
 `;
 
-const BASH_COMPLETIONS = `#!/bin/bash
+function getBashCompletions(): string {
+  return `#!/bin/bash
 
 _orkestra_completions() {
     local cur prev commands
@@ -111,40 +112,41 @@ _orkestra_completions() {
 
     commands="doctor init register up down restart status open list remove logs shell db env docker completions"
 
-    if [[ \${cur} == -* ]]; then
-        case \${prev} in
+    if [[ "\${cur}" == -* ]]; then
+        case "\${prev}" in
             up)
-                COMPREPLY=( $(compgen -W "--dir --port --foreground --all -d -f -a" -- \\${cur}) )
+                COMPREPLY=( $(compgen -W "--dir --port --foreground --all -d -f -a" -- "\${cur}") )
                 ;;
             down)
-                COMPREPLY=( $(compgen -W "--dir --all -d -a" -- \\${cur}) )
+                COMPREPLY=( $(compgen -W "--dir --all -d -a" -- "\${cur}") )
                 ;;
             status)
-                COMPREPLY=( $(compgen -W "--json --verbose --watch -v -w" -- \\${cur}) )
+                COMPREPLY=( $(compgen -W "--json --verbose --watch -v -w" -- "\${cur}") )
                 ;;
             logs)
-                COMPREPLY=( $(compgen -W "--dir --follow --since --stream --limit --list -d -f -n -l" -- \\${cur}) )
+                COMPREPLY=( $(compgen -W "--dir --follow --since --stream --limit --list -d -f -n -l" -- "\${cur}") )
                 ;;
             register)
-                COMPREPLY=( $(compgen -W "--domain --port --proxy --dir -d" -- \\${cur}) )
+                COMPREPLY=( $(compgen -W "--domain --port --proxy --dir -d" -- "\${cur}") )
                 ;;
             shell)
-                COMPREPLY=( $(compgen -W "--dir -d" -- \\${cur}) )
+                COMPREPLY=( $(compgen -W "--dir -d" -- "\${cur}") )
                 ;;
             completions)
-                COMPREPLY=( $(compgen -W "--shell" -- \\${cur}) )
+                COMPREPLY=( $(compgen -W "--shell" -- "\${cur}") )
                 ;;
             *)
-                COMPREPLY=( $(compgen -W "--help --version" -- \\${cur}) )
+                COMPREPLY=( $(compgen -W "--help --version" -- "\${cur}") )
                 ;;
         esac
     else
-        COMPREPLY=( $(compgen -W "\\${commands}" -- \\${cur}) )
+        COMPREPLY=( $(compgen -W "\${commands}" -- "\${cur}") )
     fi
 }
 
 complete -F _orkestra_completions orkestra
 `;
+}
 
 const FISH_COMPLETIONS = `# Fish completions for orkestra
 
@@ -229,21 +231,17 @@ export function completions(options: CompletionsOptions) {
   const shell = options.shell || process.env.SHELL?.split("/").pop() || "bash";
 
   let script: string;
-  let filename: string;
 
   switch (shell) {
     case "zsh":
       script = ZSH_COMPLETIONS;
-      filename = "_orkestra";
       break;
     case "fish":
       script = FISH_COMPLETIONS;
-      filename = "orkestra.fish";
       break;
     case "bash":
     default:
-      script = BASH_COMPLETIONS;
-      filename = "orkestra";
+      script = getBashCompletions();
       break;
   }
 
