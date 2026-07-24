@@ -31,7 +31,7 @@
 
 ### v0.2.0 (Process Management)
 **Branch:** `feat/up-down-status` → `dev`
-**Status:** Merged to dev, testing in progress
+**Status:** Released
 
 **Features:**
 - `up` — Start dev server with auto-registration
@@ -54,19 +54,31 @@
 ---
 
 ### v0.3.0 (Logs & Monitoring)
-**Branch:** `feat/logs-monitoring` (planned)
-**Status:** Planned
+**Branch:** `feat/logs-monitoring` → `dev`
+**Status:** Merged to dev, testing in progress
 
 **Features:**
-- `logs` — Capture stdout/stderr to log files
+- `logs` — View captured stdout/stderr from log files
 - `logs --follow` — Tail logs in real-time
-- `logs --since <time>` — Show logs from specific time
-- `up --foreground` — Run server in foreground (no detach)
+- `logs --since <time>` — Show logs since (e.g., 5m, 1h, 2d)
+- `logs --stream <stdout|stderr>` — Filter by stream
+- `logs -n <limit>` — Show last N entries
+- `logs --list` — List available log files
+- `up --foreground` — Run server in foreground (stdio inherited)
 
 **Implementation:**
-- Modify `up` command to write logs to `~/.orkestra/logs/<project>.log`
-- Implement log rotation (max 10MB per project)
-- Add `--follow` flag using `tail -f` or chokidar
+- `src/utils/logger-file.ts` — Log file capture, rotation, reading
+- `up` command captures stdout/stderr to `.orkestra/logs/<project>.log`
+- Log rotation at 10MB per file
+- `--foreground` mode inherits stdio for direct output
+- `--since` supports relative (5m, 1h, 2d) and absolute dates
+
+**Files Changed:**
+- `src/utils/logger-file.ts` — NEW: Log file utilities
+- `src/commands/up.ts` — Added log capture and --foreground mode
+- `src/commands/logs.ts` — Rewritten with full logging support
+- `src/cli.ts` — Added command options
+- `test/utils/logger-file.test.ts` — 10 new tests
 
 ---
 

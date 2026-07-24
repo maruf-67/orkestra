@@ -66,6 +66,7 @@ export function run() {
     .description("Start dev server")
     .option("-d, --dir <path>", "Project directory")
     .option("--port <port>", "Dev server port", parseInt)
+    .option("-f, --foreground", "Run in foreground (see output directly)")
     .action(up);
 
   program
@@ -90,6 +91,11 @@ export function run() {
     .command("logs")
     .description("View dev server logs")
     .option("-d, --dir <path>", "Project directory")
+    .option("-f, --follow", "Follow logs in real-time")
+    .option("--since <time>", "Show logs since (e.g., 5m, 1h, 2d, 2024-01-01)")
+    .option("--stream <stream>", "Filter by stream (stdout, stderr)")
+    .option("-n, --limit <number>", "Number of recent log entries to show", parseInt)
+    .option("-l, --list", "List available log files")
     .action(logs);
 
   program

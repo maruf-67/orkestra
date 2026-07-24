@@ -7,11 +7,13 @@ import { getProject, setProjectRunning, isProcessAlive } from "../state/store.js
 import { loadConfig } from "../config/loader.js";
 import { findAvailablePort } from "../state/ports.js";
 import { registerProjectAuto } from "../utils/registration.js";
+import { writeLog, getLogPath } from "../utils/logger-file.js";
 import type { OrkestraConfig } from "../config/schema.js";
 
 interface UpOptions {
   dir?: string;
   port?: number;
+  foreground?: boolean;
 }
 
 async function getStartCommand(
@@ -177,18 +179,57 @@ export async function up(options: UpOptions) {
   const serverSpin = spinner(`Starting ${framework.name} server...`);
   serverSpin.start();
 
+  const projectName = config?.name || basename(projectDir);
+  const logPath = getLogPath(projectDir, projectName);
+
   const child = spawn(execCmd, execArgs, {
     cwd: projectDir,
-    stdio: "pipe",
-    detached: true,
+    stdio: options.foreground ? "inherit" : "pipe",
+    detached: !options.foreground,
     env: {
       ...process.env,
       PORT: String(port),
     },
   });
 
-  // Detach so we can manage it independently
-  child.unref();
+  // Capture logs to file (unless foreground mode)
+  if (!options.foreground && child.stdout && child.stderr) {
+    child.stdout.on("data", (data: Buffer) => {
+      const lines = data.toString().split("\n").filter(Boolean);
+      for (const line of lines) {
+        writeLog(projectDir, projectName, {
+          timestamp: new Date(),
+          stream: "stdout",
+          message: line,
+        });
+      }
+    });
+
+    child.stderr.on("data", (data: Buffer) => {
+      const lines = data.toString().split("\n").filter(Boolean);
+      for (const line of lines) {
+        writeLog(projectDir, projectName, {
+          timestamp: new Date(),
+          stream: "stderr",
+          message: line,
+        });
+      }
+    });
+
+    // Handle process exit
+    child.on("exit", (code) => {
+      writeLog(projectDir, projectName, {
+        timestamp: new Date(),
+        stream: "stdout",
+        message: `[Process exited with code ${code}]`,
+      });
+    });
+  }
+
+  // Detach so we can manage it independently (unless foreground)
+  if (!options.foreground) {
+    child.unref();
+  }
 
   // Save state
   await setProjectRunning(projectDir, child.pid!);
@@ -201,7 +242,15 @@ export async function up(options: UpOptions) {
   log.plain(`  Local:    http://localhost:${port}`);
   log.plain(`  Framework: ${framework.name}`);
   log.plain(`  Port:     ${port}`);
+  log.plain(`  Logs:     ${logPath}`);
   log.plain("");
   log.dim("Stop with: orkestra down");
   log.dim("View logs: orkestra logs");
+
+  // If foreground mode, wait for process to exit
+  if (options.foreground) {
+    child.on("exit", (code) => {
+      process.exit(code ?? 0);
+    });
+  }
 }
