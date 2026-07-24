@@ -55,7 +55,7 @@
 
 ### v0.3.0 (Logs & Monitoring)
 **Branch:** `feat/logs-monitoring` → `dev`
-**Status:** Merged to dev, testing in progress
+**Status:** Released
 
 **Features:**
 - `logs` — View captured stdout/stderr from log files
@@ -82,37 +82,32 @@
 
 ---
 
-### v0.4.0 (Health & Multi-Project)
-**Branch:** `feat/health-multi` (planned)
-**Status:** Planned
+### v0.4.0 (Health, Multi-Project & Shell)
+**Branch:** `feat/health-multi` → `dev`
+**Status:** Merged to dev, testing in progress
 
 **Features:**
 - `up --all` — Start all registered projects
 - `down --all` — Stop all running projects
-- Process health monitoring — Auto-restart on crash
+- Process health monitoring — Auto-restart on crash (max 3 attempts)
 - `status --json` — Machine-readable output
+- `status --verbose` — Show detailed information
+- `status --watch` — Auto-refresh every 2 seconds
+- `shell` — Open terminal with project environment variables
 
 **Implementation:**
-- Store PID + startedAt in state (already done)
-- Add health check interval (configurable)
-- Implement restart policy (max retries, backoff)
-- Batch operations on all projects
+- `src/utils/health.ts` — HealthMonitor class with auto-restart
+- Health monitoring starts automatically when server runs in background
+- `shell` command sets ORKESTRA_* env vars (PROJECT, DOMAIN, PORT, FRAMEWORK)
+- Status shows uptime and memory usage in verbose mode
+- JSON output for scripting/automation
 
----
-
-### v0.5.0 (Shell & Status)
-**Branch:** `feat/shell-status` (planned)
-**Status:** Planned
-
-**Features:**
-- `shell` — Open terminal with project env vars
-- `status --verbose` — Show port, framework, uptime, memory
-- `status --watch` — Auto-refresh every N seconds
-
-**Implementation:**
-- Spawn shell with `PORT`, `DOMAIN`, `FRAMEWORK` env vars
-- Read `/proc/<pid>/status` for memory usage
-- Calculate uptime from `startedAt` timestamp
+**Files Changed:**
+- `src/utils/health.ts` — NEW: Health monitoring with auto-restart
+- `src/commands/shell.ts` — NEW: Shell with project env vars
+- `src/commands/up.ts` — Added --all flag and health monitoring
+- `src/commands/status.ts` — Added --json, --verbose, --watch modes
+- `src/cli.ts` — Added new command options
 
 ---
 

@@ -16,6 +16,7 @@ import { logs } from "./commands/logs.js";
 import { db } from "./commands/db.js";
 import { env } from "./commands/env.js";
 import { docker } from "./commands/docker.js";
+import { shell } from "./commands/shell.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -67,6 +68,7 @@ export function run() {
     .option("-d, --dir <path>", "Project directory")
     .option("--port <port>", "Dev server port", parseInt)
     .option("-f, --foreground", "Run in foreground (see output directly)")
+    .option("-a, --all", "Start all registered projects")
     .action(up);
 
   program
@@ -85,6 +87,9 @@ export function run() {
   program
     .command("status")
     .description("Show project status")
+    .option("--json", "Output as JSON")
+    .option("-v, --verbose", "Show detailed information")
+    .option("-w, --watch", "Auto-refresh every 2 seconds")
     .action(status);
 
   program
@@ -126,6 +131,12 @@ export function run() {
     .option("-a, --action <action>", "Action: list, up, down, status")
     .option("-d, --dir <path>", "Project directory")
     .action(docker);
+
+  program
+    .command("shell")
+    .description("Open shell with project environment variables")
+    .option("-d, --dir <path>", "Project directory")
+    .action(shell);
 
   program.parse();
 }

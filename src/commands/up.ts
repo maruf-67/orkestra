@@ -8,12 +8,14 @@ import { loadConfig } from "../config/loader.js";
 import { findAvailablePort } from "../state/ports.js";
 import { registerProjectAuto } from "../utils/registration.js";
 import { writeLog, getLogPath } from "../utils/logger-file.js";
+import { healthMonitor } from "../utils/health.js";
 import type { OrkestraConfig } from "../config/schema.js";
 
 interface UpOptions {
   dir?: string;
   port?: number;
   foreground?: boolean;
+  all?: boolean;
 }
 
 async function getStartCommand(
@@ -83,9 +85,39 @@ async function getStartCommand(
 }
 
 export async function up(options: UpOptions) {
-  const projectDir = resolve(options.dir || process.cwd());
-
   heading("Start Dev Server");
+
+  // Handle --all flag
+  if (options.all) {
+    const { listProjects } = await import("../state/store.js");
+    const projects = await listProjects();
+
+    if (projects.length === 0) {
+      log.info("No projects registered.");
+      log.dim("Run `orkestra register` in a project directory to get started.");
+      return;
+    }
+
+    let started = 0;
+    for (const project of projects) {
+      if (project.pid && await isProcessAlive(project.pid)) {
+        log.plain(`  ⊙ ${project.name} — already running (PID: ${project.pid})`);
+        continue;
+      }
+
+      try {
+        await up({ dir: project.path, foreground: false });
+        started++;
+      } catch (error) {
+        log.error(`Failed to start ${project.name}: ${error}`);
+      }
+    }
+
+    log.success(`Started ${started} server(s).`);
+    return;
+  }
+
+  const projectDir = resolve(options.dir || process.cwd());
 
   // Check if already running
   const existing = await getProject(projectDir);
@@ -233,6 +265,11 @@ export async function up(options: UpOptions) {
 
   // Save state
   await setProjectRunning(projectDir, child.pid!);
+
+  // Start health monitoring (unless foreground mode)
+  if (!options.foreground) {
+    healthMonitor.startMonitoring(projectDir);
+  }
 
   serverSpin.succeed(`Server started (PID: ${child.pid})`);
 
