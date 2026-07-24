@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import type { ProxyProvider, ProxyConfig } from "../types.js";
 import { run, isCommandAvailable, sudoWriteFile } from "../../utils/exec.js";
 import { getPlatform, isWindows } from "../../platform/index.js";
+import { installMkcert } from "../../utils/installer.js";
 
 // mkcert generates certs here
 const MKCERT_CERT_DIR = join(homedir(), ".orkestra", "certs");
@@ -47,40 +48,18 @@ export class CaddyProxy implements ProxyProvider {
    * Ensure mkcert is installed and its CA is trusted by the system.
    */
   private async ensureMkcert(): Promise<void> {
-    if (!await isCommandAvailable("mkcert")) {
-      let installResult;
-
-      if (isWindows()) {
-        // Windows: Try chocolatey
-        installResult = await run("choco", ["install", "mkcert", "-y"]);
-      } else {
-        const platform = getPlatform();
-        if (platform.serviceManager === "systemctl") {
-          // Linux: Try curl install script
-          installResult = await run("sh", ["-c", "curl -fsSL https://mkcert.dev/install.sh | sudo sh"]);
-        } else if (platform.serviceManager === "launchctl") {
-          // macOS: Try brew
-          installResult = await run("brew", ["install", "mkcert"]);
-        }
-      }
-
-      // Check if installation succeeded
-      if (!installResult || installResult.exitCode !== 0) {
-        throw new Error(
-          "mkcert is required for SSL certificates.\n" +
-          "Install manually: https://github.com/FiloSottile/mkcert#installation\n" +
-          "Or disable SSL in .orkestra.yml: ssl: false"
-        );
-      }
-    }
-
-    // Install the local CA into system trust store (idempotent)
-    const result = await run("mkcert", ["-install"]);
-    if (result.exitCode !== 0) {
+    const result = await installMkcert();
+    if (!result.installed && !result.skipped) {
       throw new Error(
-        "Failed to install mkcert CA.\n" +
-        "Try running: mkcert -install\n" +
+        "mkcert is required for SSL certificates.\n" +
+        "Install manually: https://github.com/FiloSottile/mkcert#installation\n" +
         "Or disable SSL in .orkestra.yml: ssl: false"
+      );
+    }
+    if (result.skipped) {
+      throw new Error(
+        "SSL requires mkcert. Disabled for this session.\n" +
+        "To enable later: mkcert -install"
       );
     }
   }

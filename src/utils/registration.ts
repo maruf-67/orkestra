@@ -9,6 +9,7 @@ import { loadConfig } from "../config/loader.js";
 import { OrkestraConfig } from "../config/schema.js";
 import { addAllowedHost } from "./host-config.js";
 import { log } from "../utils/logger.js";
+import { installCaddy, installMkcert } from "./installer.js";
 import type { FrameworkInfo } from "../providers/types.js";
 
 export interface RegistrationOptions {
@@ -105,19 +106,30 @@ export async function registerProjectAuto(
   await hosts.add(domain);
 
   // Detect and configure proxy
-  const proxy = await detectProxy(options?.proxy || config?.proxy);
+  let proxy = await detectProxy(options?.proxy || config?.proxy);
 
   if (proxy) {
     await proxy.register({ domain, port, ssl: config?.ssl ?? true });
   } else {
-    // Warn when no proxy is found
+    // No proxy found - offer to install Caddy
     log.warn("No proxy detected (Caddy, Nginx, Apache, or Traefik)");
-    log.dim("HTTPS URLs will not work without a reverse proxy.");
-    log.dim("Install Caddy: https://caddyserver.com/docs/install");
-    log.dim("");
 
-    if (config?.ssl) {
-      log.warn("SSL is enabled in config but requires a proxy. HTTP only.");
+    const installResult = await installCaddy();
+    if (installResult.installed) {
+      // Re-detect proxy after installation
+      proxy = await detectProxy("caddy");
+      if (proxy) {
+        await proxy.register({ domain, port, ssl: config?.ssl ?? true });
+      }
+    } else if (!installResult.skipped) {
+      log.error("Failed to install Caddy");
+      log.dim("Install manually: https://caddyserver.com/download");
+    } else {
+      log.dim("Continuing without proxy. HTTP only.");
+    }
+
+    if (config?.ssl && !proxy) {
+      log.warn("SSL requires a proxy. HTTP only for now.");
     }
   }
 
