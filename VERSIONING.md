@@ -111,25 +111,37 @@
 
 ---
 
-### v1.0.0 (Documentation & Polish)
+### v1.0.0 (Documentation, Polish & Cross-Platform)
 **Branch:** `feat/docs-polish` → `dev`
-**Status:** Merged to dev, testing in progress
+**Status:** Released
 
 **Features:**
 - Updated README with all commands and examples
 - `--help` examples for every command
 - Better error messages with install instructions
-- ZSH/Bash/Fish completion scripts
+- ZSH/Bash/Fish/PowerShell completion scripts
 - `orkestra completions` command
+- Merged `init` and `register` into single `init` command
+- Auto-add `.orkestra` to `.gitignore` on init
+- Clean logs on `remove` command
+- Smart installer with user permission for Caddy/mkcert
+- Windows support (PowerShell, where.exe, UAC elevation)
+- Graceful degradation when tools are missing
 
 **Implementation:**
-- `src/commands/completions.ts` — Shell completion generator
+- `src/commands/completions.ts` — Shell completion generator (ZSH/Bash/Fish/PowerShell)
+- `src/utils/installer.ts` — Smart installer with user permission
+- `src/utils/exec.ts` — Cross-platform sudo/elevation handling
 - Updated README.md with comprehensive documentation
-- Shell completions for ZSH, Bash, and Fish
 
 **Files Changed:**
 - `src/commands/completions.ts` — NEW: Shell completion scripts
-- `src/cli.ts` — Added completions command
+- `src/commands/init.ts` — Merged with register, auto .gitignore
+- `src/commands/remove.ts` — Added log cleanup
+- `src/utils/installer.ts` — NEW: Smart tool installer
+- `src/utils/exec.ts` — Windows support
+- `src/providers/proxy/caddy.ts` — Cross-platform cert handling
+- `src/cli.ts` — Removed register command
 - `README.md` — Complete documentation rewrite
 
 ---
