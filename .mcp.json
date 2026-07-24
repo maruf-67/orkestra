@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "ai-orchestrator": {
+      "command": "node",
+      "args": [
+        "/home/almaruf67/Codes/FastApi/ai-orchestrator/mcp-server/dist/index.js",
+        "--project-dir",
+        "/home/almaruf67/Codes/orkestra",
+        "--skills-dir",
+        "/home/almaruf67/Codes/ai-skills/skills"
+      ],
+      "env": {
+        "NODE_ENV": "development"
+      }
+    }
+  }
+}
