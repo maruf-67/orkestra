@@ -10,6 +10,7 @@ import { init } from "./commands/init.js";
 import { open } from "./commands/open.js";
 import { up } from "./commands/up.js";
 import { down } from "./commands/down.js";
+import { restart } from "./commands/restart.js";
 import { status } from "./commands/status.js";
 import { logs } from "./commands/logs.js";
 
@@ -70,6 +71,12 @@ export function run() {
     .option("-d, --dir <path>", "Project directory")
     .option("-a, --all", "Stop all running servers")
     .action(down);
+
+  program
+    .command("restart")
+    .description("Restart dev server")
+    .option("-d, --dir <path>", "Project directory")
+    .action(restart);
 
   program
     .command("status")

@@ -4,7 +4,8 @@ import { isCommandAvailable } from "../utils/exec.js";
 import { listFrameworks, listLanguages } from "../detection/framework.js";
 import { detectProxy, listProxies } from "../detection/proxy.js";
 import { detectRuntime, listRuntimes } from "../detection/runtime.js";
-import { listPackageManagers, detectPackageManager } from "../detection/package-manager.js";
+import { listPackageManagers } from "../detection/package-manager.js";
+import { listDatabases } from "../detection/database.js";
 import { getPlatform, isWindows, isMacOS, isLinux } from "../platform/index.js";
 
 export async function doctor() {
@@ -64,6 +65,20 @@ export async function doctor() {
   heading("Package Managers");
   table(pmResults);
 
+  // Database commands
+  const dbSpin = spinner("Detecting databases...");
+  dbSpin.start();
+  const dbs = listDatabases();
+  const dbResults: [string, string][] = [];
+  for (const db of dbs) {
+    const detected = await isCommandAvailable(db);
+    dbResults.push([db, detected ? "✓" : "✗"]);
+  }
+  dbSpin.stop();
+
+  heading("Databases");
+  table(dbResults);
+
   // Config directory
   const platform = getPlatform();
   const configDirExists = existsSync(platform.configDir);
@@ -77,7 +92,6 @@ export async function doctor() {
   // Recommendations
   const recommendedProxy = await detectProxy();
   const recommendedRuntime = await detectRuntime();
-  const recommendedPm = await detectPackageManager();
 
   heading("Recommendations");
   if (recommendedProxy) {
@@ -90,11 +104,5 @@ export async function doctor() {
     log.success(`Runtime: ${recommendedRuntime.name}`);
   } else {
     log.warn("No Node.js runtime detected.");
-  }
-
-  if (recommendedPm) {
-    log.success(`Package manager: ${recommendedPm.name}`);
-  } else {
-    log.warn("No package manager detected.");
   }
 }

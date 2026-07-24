@@ -1,7 +1,13 @@
 import type { ProxyProvider } from "../providers/types.js";
 import { CaddyProxy } from "../providers/proxy/caddy.js";
+import { ApacheProxy } from "../providers/proxy/apache.js";
+import { NginxProxy } from "../providers/proxy/nginx.js";
 
-const allProviders: ProxyProvider[] = [new CaddyProxy()];
+const allProviders: ProxyProvider[] = [
+  new CaddyProxy(),
+  new NginxProxy(),
+  new ApacheProxy(),
+];
 
 export async function detectProxy(preferred?: string): Promise<ProxyProvider | null> {
   if (preferred && preferred !== "auto") {
