@@ -24,6 +24,9 @@ Technical overview of Orkestra's architecture and design decisions.
 │  ├── doctor.ts    # Check system capabilities              │
 │  ├── list.ts      # List all projects                      │
 │  ├── open.ts      # Open in browser                        │
+│  ├── db.ts        # Database management                    │
+│  ├── env.ts       # Environment variable management        │
+│  ├── docker.ts    # Docker Compose management              │
 │  └── completions.ts # Shell completions                    │
 └─────────────────────────────────────────────────────────────┘
                             │

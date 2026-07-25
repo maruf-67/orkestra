@@ -40,6 +40,7 @@ orkestra init [options]
 | `--domain <domain>` | Domain name (default: `<name>.dev.com`) |
 | `--port <port>` | Dev server port |
 | `--proxy <proxy>` | Proxy provider (caddy, apache, nginx) |
+| `-y, --yes` | Skip prompts, use defaults (for CI/CD) |
 
 ### Examples
 
