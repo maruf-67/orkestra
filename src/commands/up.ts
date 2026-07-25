@@ -65,10 +65,24 @@ async function getStartCommand(
   if (frameworkName === "laravel") {
     try {
       const composer = JSON.parse(await readFile(resolve(dir, "composer.json"), "utf-8"));
-      const serveScript = composer.scripts?.serve;
-      if (serveScript) {
-        const parts = serveScript.split(/\s+/);
-        return { cmd: parts[0], args: parts.slice(1) };
+      const scripts = composer.scripts || {};
+
+      // Laravel dev script (preferred - runs server + queue + logs + vite)
+      if (scripts.dev) {
+        // Laravel dev script is often an array or uses concurrently
+        // Use composer dev to run it properly
+        return { cmd: "composer", args: ["dev"] };
+      }
+
+      // Laravel serve script
+      if (scripts.serve) {
+        // Parse the serve command to extract port if specified
+        const serveScript = Array.isArray(scripts.serve) ? scripts.serve.join(" ") : scripts.serve;
+        const portMatch = serveScript.match(/--port[= ](\d+)/);
+        if (portMatch) {
+          return { cmd: "php", args: ["artisan", "serve", `--port=${portMatch[1]}`] };
+        }
+        return { cmd: "php", args: ["artisan", "serve"] };
       }
     } catch {}
   }
@@ -217,6 +231,15 @@ export async function up(options: UpOptions) {
   // Determine package manager for npx/pnpm exec
   let execCmd = command.cmd;
   let execArgs = [...command.args];
+
+  // For Laravel, inject port option if not already specified
+  if (framework.name === "laravel" && execCmd === "php" && execArgs.includes("artisan")) {
+    // Check if port is already in args
+    const hasPort = execArgs.some(arg => arg.includes("--port"));
+    if (!hasPort && port) {
+      execArgs.push(`--port=${port}`);
+    }
+  }
 
   // If command is a bin that might need npx/pnpm exec (like "next", "nuxt", "vite")
   const needsExec = ["next", "nuxt", "vite", "remix", "astro", "svelte"].some(b => execCmd.startsWith(b));

@@ -22,6 +22,7 @@ Technical overview of Orkestra's architecture and design decisions.
 │  ├── shell.ts     # Open shell with env vars               │
 │  ├── remove.ts    # Remove project                         │
 │  ├── doctor.ts    # Check system capabilities              │
+│  ├── check.ts     # Validate config and check for issues   │
 │  ├── list.ts      # List all projects                      │
 │  ├── open.ts      # Open in browser                        │
 │  ├── db.ts        # Database management                    │

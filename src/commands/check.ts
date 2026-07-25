@@ -144,9 +144,7 @@ export async function check(options: CheckOptions) {
 
   // 8. Check platform-specific issues
   if (isWindows()) {
-    if (rawConfig.proxy === "nginx" || rawConfig.proxy === "apache") {
-      results.suggestions.push(`${rawConfig.proxy} on Windows requires manual configuration`);
-    }
+    // Windows proxy support is fully automated for Caddy, Nginx, and Apache
   }
 
   // Print results

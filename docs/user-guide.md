@@ -16,6 +16,7 @@ Complete reference for all Orkestra commands and options.
 | `orkestra remove` | Remove project completely |
 | `orkestra list` | List all projects |
 | `orkestra doctor` | Check system capabilities |
+| `orkestra check` | Validate configuration and check for issues |
 | `orkestra open` | Open project in browser |
 | `orkestra db` | Database management |
 | `orkestra env` | Environment variable management |
