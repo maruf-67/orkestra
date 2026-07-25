@@ -1,13 +1,18 @@
 import { resolve, basename } from "node:path";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { log, heading, spinner } from "../utils/logger.js";
 import { getProject, listProjects } from "../state/store.js";
 import { loadConfig } from "../config/loader.js";
 import { detectFramework } from "../detection/framework.js";
 import { detectShareProvider, type ShareSession } from "../providers/share/index.js";
 import { printQRCode } from "../utils/qr.js";
-import { isCommandAvailable } from "../utils/exec.js";
+import { isCommandAvailable, run } from "../utils/exec.js";
 import { installCloudflared } from "../utils/installer.js";
 import { addAllowedHost } from "../utils/host-config.js";
+import { isWindows } from "../platform/index.js";
 
 interface ShareOptions {
   dir?: string;
@@ -21,8 +26,30 @@ interface ShareOptions {
   url?: boolean;
 }
 
-// Store active sessions
-const activeSessions: Map<string, ShareSession> = new Map();
+const SESSION_FILE = join(homedir(), ".orkestra", "shares", "sessions.json");
+
+async function loadSessions(): Promise<Record<string, ShareSession>> {
+  try {
+    if (existsSync(SESSION_FILE)) {
+      const data = await readFile(SESSION_FILE, "utf-8");
+      const sessions = JSON.parse(data);
+      // Convert date strings back to Date objects
+      for (const key of Object.keys(sessions)) {
+        sessions[key].startedAt = new Date(sessions[key].startedAt);
+      }
+      return sessions;
+    }
+  } catch {}
+  return {};
+}
+
+async function saveSessions(sessions: Record<string, ShareSession>): Promise<void> {
+  const dir = join(homedir(), ".orkestra", "shares");
+  if (!existsSync(dir)) {
+    await mkdir(dir, { recursive: true });
+  }
+  await writeFile(SESSION_FILE, JSON.stringify(sessions, null, 2), "utf-8");
+}
 
 export async function share(options: ShareOptions) {
   // Handle share stop
@@ -90,6 +117,36 @@ export async function share(options: ShareOptions) {
     process.exit(1);
   }
 
+  // Check if tunnel already exists for this project
+  const sessions = await loadSessions();
+  if (sessions[projectDir]) {
+    const existingSession = sessions[projectDir];
+    const provider = await detectShareProvider(existingSession.provider);
+    if (provider) {
+      const status = await provider.getStatus(existingSession);
+      if (status.isRunning) {
+        log.warn("Tunnel already running for this project");
+        log.plain(`  Public URL: ${status.publicUrl}`);
+
+        if (options.qr) {
+          await printQRCode(status.publicUrl!);
+        }
+
+        if (options.json) {
+          console.log(JSON.stringify({
+            project: projectName,
+            publicUrl: status.publicUrl,
+            alreadyRunning: true,
+          }, null, 2));
+        }
+        return;
+      }
+    }
+    // Clean up stale session
+    delete sessions[projectDir];
+    await saveSessions(sessions);
+  }
+
   // Detect share provider with auto-install
   const providerSpin = spinner("Detecting share provider...");
   providerSpin.start();
@@ -133,7 +190,8 @@ export async function share(options: ShareOptions) {
     });
 
     // Store session
-    activeSessions.set(projectDir, session);
+    sessions[projectDir] = session;
+    await saveSessions(sessions);
 
     tunnelSpin.succeed("Tunnel established!");
 
@@ -179,8 +237,8 @@ export async function share(options: ShareOptions) {
       }, null, 2));
     }
 
-    log.dim("Stop with: orkestra share stop");
-    log.dim("View status: orkestra share status");
+    log.dim("Stop with: orkestra share --stop");
+    log.dim("View status: orkestra share --status");
 
   } catch (error) {
     tunnelSpin.fail(`Failed to create tunnel: ${error}`);
@@ -207,7 +265,9 @@ async function stopShare(options: ShareOptions) {
     projectDir = resolve(options.dir || process.cwd());
   }
 
-  const session = activeSessions.get(projectDir);
+  const sessions = await loadSessions();
+  const session = sessions[projectDir];
+
   if (!session) {
     log.info("No active tunnel found for this project.");
     return;
@@ -218,18 +278,21 @@ async function stopShare(options: ShareOptions) {
     await provider.stop(session);
   }
 
-  activeSessions.delete(projectDir);
+  delete sessions[projectDir];
+  await saveSessions(sessions);
+
   log.success("Tunnel stopped.");
 }
 
 async function showStatus(options: ShareOptions) {
   heading("Share Status");
 
+  const sessions = await loadSessions();
   const projects = await listProjects();
   const results: { name: string; url: string; status: string }[] = [];
 
   for (const project of projects) {
-    const session = activeSessions.get(project.path);
+    const session = sessions[project.path];
     if (session) {
       const provider = await detectShareProvider(session.provider);
       if (provider) {
@@ -274,7 +337,9 @@ async function showUrl(options: ShareOptions) {
     projectDir = resolve(options.dir || process.cwd());
   }
 
-  const session = activeSessions.get(projectDir);
+  const sessions = await loadSessions();
+  const session = sessions[projectDir];
+
   if (!session) {
     log.error("No active tunnel found.");
     log.dim("Start sharing with: orkestra share");
@@ -292,6 +357,10 @@ async function showUrl(options: ShareOptions) {
 
 async function isProcessAlive(pid: number): Promise<boolean> {
   try {
+    if (isWindows()) {
+      const result = await run("tasklist", ["/FI", `PID eq ${pid}`]);
+      return result.stdout.includes(String(pid));
+    }
     process.kill(pid, 0);
     return true;
   } catch {
@@ -302,7 +371,6 @@ async function isProcessAlive(pid: number): Promise<boolean> {
 async function copyToClipboard(text: string): Promise<void> {
   try {
     const { isWindows, isMacOS } = await import("../platform/index.js");
-    const { run } = await import("../utils/exec.js");
 
     if (isMacOS()) {
       await run("pbcopy", [], { stdin: text });
