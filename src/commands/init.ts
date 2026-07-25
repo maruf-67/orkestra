@@ -13,6 +13,7 @@ interface InitOptions {
   domain?: string;
   port?: number;
   proxy?: string;
+  yes?: boolean;
 }
 
 export async function init(options: InitOptions) {
@@ -51,13 +52,13 @@ export async function init(options: InitOptions) {
   const defaultDomain = `${projectName}.dev.com`;
   const defaultPort = await detectPortFromProject(projectDir, framework?.name || "") || framework?.port || 3000;
 
-  // Interactive prompts (skip if options provided)
+  // Interactive prompts (skip if --yes or options provided)
   let name = projectName;
   let domain = options.domain || defaultDomain;
   let port = options.port || defaultPort;
   let ssl = true;
 
-  if (!options.domain || !options.port) {
+  if (!options.yes && (!options.domain || !options.port)) {
     const response = await prompts([
       {
         type: options.domain ? null : "text",
@@ -95,7 +96,7 @@ export async function init(options: InitOptions) {
   const configPath = join(projectDir, ".orkestra.yml");
   const configExists = existsSync(configPath);
 
-  if (configExists && !existing) {
+  if (configExists && !existing && !options.yes) {
     const overwrite = await prompts({
       type: "confirm",
       name: "value",
@@ -134,6 +135,7 @@ export async function init(options: InitOptions) {
       domain,
       port,
       proxy: options.proxy,
+      skipPrompts: options.yes,
     });
 
     regSpin.succeed("Project registered successfully!");

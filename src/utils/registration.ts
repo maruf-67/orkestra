@@ -9,7 +9,7 @@ import { loadConfig } from "../config/loader.js";
 import { OrkestraConfig } from "../config/schema.js";
 import { addAllowedHost } from "./host-config.js";
 import { log } from "../utils/logger.js";
-import { installCaddy, installMkcert } from "./installer.js";
+import { installCaddy, installMkcert, setAutoInstall } from "./installer.js";
 import type { FrameworkInfo } from "../providers/types.js";
 
 export interface RegistrationOptions {
@@ -80,6 +80,11 @@ export async function registerProjectAuto(
   options?: RegistrationOptions
 ): Promise<RegistrationResult> {
   const projectDir = resolve(dir);
+
+  // Set auto-install mode if skipPrompts is true
+  if (options?.skipPrompts) {
+    setAutoInstall(true);
+  }
 
   // Load config
   const config = await loadConfig(projectDir);

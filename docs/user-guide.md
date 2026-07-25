@@ -17,6 +17,9 @@ Complete reference for all Orkestra commands and options.
 | `orkestra list` | List all projects |
 | `orkestra doctor` | Check system capabilities |
 | `orkestra open` | Open project in browser |
+| `orkestra db` | Database management |
+| `orkestra env` | Environment variable management |
+| `orkestra docker` | Docker compose management |
 | `orkestra completions` | Generate shell completions |
 
 ---
@@ -362,3 +365,130 @@ orkestra completions --shell fish > ~/.config/fish/completions/orkestra.fish
 # PowerShell
 orkestra completions --shell powershell > $PROFILE
 ```
+
+---
+
+## orkestra db
+
+Database management for detected databases.
+
+```bash
+orkestra db [options]
+```
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `-a, --action <action>` | Action: list, create, drop |
+| `-n, --name <name>` | Database name |
+| `-d, --dir <path>` | Project directory |
+
+### Examples
+
+```bash
+# Show database status
+orkestra db
+
+# List detected databases
+orkestra db list
+
+# Create a database
+orkestra db create mydb
+
+# Drop a database
+orkestra db drop mydb
+```
+
+### Supported Databases
+
+- PostgreSQL (via `psql`, `createdb`, `dropdb`)
+- MySQL (via `mysql` CLI)
+- SQLite (file-based)
+
+---
+
+## orkestra env
+
+Environment variable management for `.env` files.
+
+```bash
+orkestra env [options]
+```
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `-s, --set <key=value>` | Set a variable |
+| `-g, --get <key>` | Get a variable |
+| `-d, --dir <path>` | Project directory |
+
+### Examples
+
+```bash
+# List all env vars
+orkestra env
+
+# Get a variable
+orkestra env --get DATABASE_URL
+
+# Set a variable
+orkestra env --set PORT=3000
+
+# Set with spaces in value
+orkestra env --set "APP_NAME=My App"
+```
+
+### Security
+
+Sensitive values (containing `password`, `secret`, `token`, `key`, `api_key`) are automatically masked in output:
+
+```
+DB_PASSWORD=ab****xy
+API_KEY=pk****98
+```
+
+---
+
+## orkestra docker
+
+Docker Compose management.
+
+```bash
+orkestra docker [options]
+```
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `-a, --action <action>` | Action: list, up, down, status |
+| `-d, --dir <path>` | Project directory |
+
+### Examples
+
+```bash
+# Show Docker services
+orkestra docker
+
+# List services
+orkestra docker list
+
+# Start all services
+orkestra docker up
+
+# Stop all services
+orkestra docker down
+
+# Show running containers
+orkestra docker status
+```
+
+### Supported Compose Files
+
+- `docker-compose.yml`
+- `docker-compose.yaml`
+- `compose.yml`
+- `compose.yaml`
+- `docker-compose.override.yml`

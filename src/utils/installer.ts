@@ -9,10 +9,26 @@ export interface InstallResult {
   error?: string;
 }
 
+// Global flag for CI/CD mode (skip prompts)
+let autoInstall = false;
+
+/**
+ * Set auto-install mode (for CI/CD).
+ */
+export function setAutoInstall(enabled: boolean): void {
+  autoInstall = enabled;
+}
+
 /**
  * Ask user permission before installing a tool.
  */
 async function askPermission(toolName: string, installCmd: string): Promise<boolean> {
+  // Skip prompt in auto-install mode
+  if (autoInstall) {
+    log.info(`Auto-installing ${toolName} (CI/CD mode)`);
+    return true;
+  }
+
   const response = await prompts({
     type: "confirm",
     name: "value",

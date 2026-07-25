@@ -43,6 +43,7 @@ export function run() {
     .option("--domain <domain>", "Domain name")
     .option("--port <port>", "Dev server port", parseInt)
     .option("--proxy <proxy>", "Proxy provider (caddy, apache, nginx)")
+    .option("-y, --yes", "Skip prompts, use defaults (for CI/CD)")
     .action(init);
 
   program
