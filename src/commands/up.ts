@@ -195,10 +195,23 @@ export async function up(options: UpOptions) {
 
   // Only find available port if the configured port is actually in use by ANOTHER process
   // (not by our own stale PID)
+  const originalPort = port;
   const isPortInUse = await isPortOccupied(port);
   if (isPortInUse) {
     log.warn(`Port ${port} is in use by another process`);
     port = await findAvailablePort(port);
+    log.info(`Using alternative port: ${port}`);
+
+    // Update proxy configuration with new port
+    if (domain) {
+      const { detectProxy } = await import("../detection/proxy.js");
+      const proxy = await detectProxy(config?.proxy);
+      if (proxy) {
+        log.dim(`Updating proxy configuration for port ${port}...`);
+        await proxy.unregister(domain);
+        await proxy.register({ domain, port, ssl: config?.ssl ?? true });
+      }
+    }
   }
 
   // Determine package manager for npx/pnpm exec
@@ -294,6 +307,12 @@ export async function up(options: UpOptions) {
   // Detach so we can manage it independently (unless foreground)
   if (!options.foreground) {
     child.unref();
+  }
+
+  // Update state with actual port if it changed
+  if (port !== originalPort && existing) {
+    const { updateProjectPort } = await import("../state/store.js");
+    await updateProjectPort(projectDir, port);
   }
 
   // Save state
