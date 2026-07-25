@@ -92,6 +92,7 @@ export function run() {
   program
     .command("status")
     .description("Show project status")
+    .option("-p, --project <name>", "Project name (lookup from state)")
     .option("--json", "Output as JSON")
     .option("-v, --verbose", "Show detailed information")
     .option("-w, --watch", "Auto-refresh every 2 seconds")

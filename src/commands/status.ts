@@ -4,6 +4,7 @@ import { isWindows, isMacOS, isLinux } from "../platform/index.js";
 import { run } from "../utils/exec.js";
 
 interface StatusOptions {
+  project?: string;
   json?: boolean;
   verbose?: boolean;
   watch?: boolean;
@@ -131,7 +132,21 @@ function printCompact(project: ProjectState, isRunning: boolean) {
 }
 
 export async function status(options: StatusOptions) {
-  const projects = await listProjects();
+  let projects = await listProjects();
+
+  // Filter by project name if provided
+  if (options.project) {
+    const match = projects.filter(p =>
+      p.name.toLowerCase() === options.project!.toLowerCase() ||
+      p.path.toLowerCase().includes(options.project!.toLowerCase())
+    );
+    if (match.length === 0) {
+      log.error(`Project not found: ${options.project}`);
+      log.dim("Use 'orkestra list' to see all registered projects");
+      process.exit(1);
+    }
+    projects = match;
+  }
 
   if (projects.length === 0) {
     if (!options.json) {
