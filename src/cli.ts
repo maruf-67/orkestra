@@ -156,6 +156,7 @@ export function run() {
   program
     .command("share")
     .description("Share project via Cloudflare tunnel")
+    .argument("[project]", "Project name (optional)")
     .option("-d, --dir <path>", "Project directory")
     .option("-p, --project <name>", "Project name (lookup from state)")
     .option("--provider <provider>", "Share provider (cloudflare)")
@@ -165,7 +166,13 @@ export function run() {
     .option("--stop", "Stop sharing")
     .option("--status", "Show share status")
     .option("--url", "Show and copy tunnel URL")
-    .action(share);
+    .action((projectName, options) => {
+      // Handle positional argument as project name
+      if (projectName && !options.project) {
+        options.project = projectName;
+      }
+      share(options);
+    });
 
   program.parse();
 }

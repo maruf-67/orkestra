@@ -137,10 +137,17 @@ export async function share(options: ShareOptions) {
 
     tunnelSpin.succeed("Tunnel established!");
 
-    // Auto-add tunnel domain to allowedHosts
+    // Auto-add both tunnel domain AND local domain to allowedHosts
     const tunnelDomain = new URL(session.publicUrl).hostname;
+    const localDomain = project.domain;
+
     log.dim(`Adding ${tunnelDomain} to allowedHosts...`);
     await addAllowedHost(projectDir, tunnelDomain);
+
+    if (localDomain) {
+      log.dim(`Adding ${localDomain} to allowedHosts...`);
+      await addAllowedHost(projectDir, localDomain);
+    }
 
     // Display results
     heading("Share Details");
