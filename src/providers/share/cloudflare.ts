@@ -36,6 +36,11 @@ export class CloudflareShare implements ShareProvider {
       await mkdir(logDir, { recursive: true });
     }
 
+    // Clear old log file to avoid reading stale URLs
+    if (existsSync(logFile)) {
+      await writeFile(logFile, "", "utf-8");
+    }
+
     // Find cloudflared binary
     let cloudflaredPath = "cloudflared";
     if (!(await isCommandAvailable("cloudflared"))) {
