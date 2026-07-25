@@ -17,6 +17,7 @@ import { env } from "./commands/env.js";
 import { docker } from "./commands/docker.js";
 import { shell } from "./commands/shell.js";
 import { completions } from "./commands/completions.js";
+import { check } from "./commands/check.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -35,6 +36,13 @@ export function run() {
     .command("doctor")
     .description("Check system capabilities and dependencies")
     .action(doctor);
+
+  program
+    .command("check")
+    .description("Validate configuration and check for issues")
+    .option("-d, --dir <path>", "Project directory")
+    .option("--fix", "Attempt to fix issues automatically")
+    .action(check);
 
   program
     .command("init")
