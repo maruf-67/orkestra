@@ -1,6 +1,6 @@
 import { isCommandAvailable, run } from "./exec.js";
 import { isWindows, isMacOS } from "../platform/index.js";
-import { log } from "./logger.js";
+import { log, spinner } from "./logger.js";
 import prompts from "prompts";
 
 export interface InstallResult {
@@ -9,21 +9,13 @@ export interface InstallResult {
   error?: string;
 }
 
-// Global flag for CI/CD mode (skip prompts)
 let autoInstall = false;
 
-/**
- * Set auto-install mode (for CI/CD).
- */
 export function setAutoInstall(enabled: boolean): void {
   autoInstall = enabled;
 }
 
-/**
- * Ask user permission before installing a tool.
- */
-async function askPermission(toolName: string, _installCmd: string): Promise<boolean> {
-  // Skip prompt in auto-install mode
+async function askPermission(toolName: string): Promise<boolean> {
   if (autoInstall) {
     log.info(`Auto-installing ${toolName} (CI/CD mode)`);
     return true;
@@ -38,106 +30,24 @@ async function askPermission(toolName: string, _installCmd: string): Promise<boo
   return response.value ?? false;
 }
 
-/**
- * Install mkcert with user permission.
- * - macOS: brew install mkcert
- * - Linux: curl install script
- * - Windows: choco install mkcert
- */
-export async function installMkcert(force: boolean = false): Promise<InstallResult> {
-  if (await isCommandAvailable("mkcert")) {
-    return { installed: true, skipped: false };
-  }
-
-  log.info("mkcert is required for SSL certificates");
-
-  const installCmd = isWindows()
-    ? "choco install mkcert -y"
-    : isMacOS()
-    ? "brew install mkcert"
-    : "curl -fsSL https://mkcert.dev/install.sh | sudo sh";
-
-  if (!force) {
-    const proceed = await askPermission("mkcert", installCmd);
-    if (!proceed) {
-      log.dim("Skipping mkcert installation. SSL will not work.");
-      log.dim("Install manually: https://github.com/FiloSottile/mkcert#installation");
-      return { installed: false, skipped: true };
-    }
-  }
-
-  log.info(`Installing mkcert via: ${installCmd}`);
-
-  let result;
-  if (isWindows()) {
-    result = await run("choco", ["install", "mkcert", "-y"]);
-  } else if (isMacOS()) {
-    result = await run("brew", ["install", "mkcert"]);
-  } else {
-    result = await run("sh", ["-c", "curl -fsSL https://mkcert.dev/install.sh | sudo sh"]);
-  }
-
-  if (result.exitCode !== 0) {
-    return {
-      installed: false,
-      skipped: false,
-      error: `Failed to install mkcert: ${result.stderr}`,
-    };
-  }
-
-  // Install the local CA
-  const caResult = await run("mkcert", ["-install"]);
-  if (caResult.exitCode !== 0) {
-    log.warn("mkcert installed but CA installation failed");
-    log.dim("Run manually: mkcert -install");
-  }
-
-  return { installed: true, skipped: false };
-}
-
-/**
- * Install Caddy with user permission.
- * - macOS: brew install caddy
- * - Linux: apt/dnf install
- * - Windows: choco install caddy
- */
-export async function installCaddy(force: boolean = false): Promise<InstallResult> {
+export async function installCaddy(): Promise<InstallResult> {
   if (await isCommandAvailable("caddy")) {
     return { installed: true, skipped: false };
   }
 
   log.info("Caddy is recommended for local HTTPS development");
 
-  let installCmd: string;
-  if (isWindows()) {
-    installCmd = "choco install caddy -y";
-  } else if (isMacOS()) {
-    installCmd = "brew install caddy";
-  } else {
-    // Detect package manager
-    if (await isCommandAvailable("apt")) {
-      installCmd = "sudo apt update && sudo apt install -y caddy";
-    } else if (await isCommandAvailable("dnf")) {
-      installCmd = "sudo dnf install -y caddy";
-    } else if (await isCommandAvailable("pacman")) {
-      installCmd = "sudo pacman -S caddy";
-    } else {
-      installCmd = "Download from https://caddyserver.com/download";
-    }
+  const proceed = await askPermission("Caddy");
+  if (!proceed) {
+    log.dim("Skipping Caddy installation.");
+    return { installed: false, skipped: true };
   }
 
-  if (!force) {
-    const proceed = await askPermission("Caddy", installCmd);
-    if (!proceed) {
-      log.dim("Skipping Caddy installation.");
-      log.dim("Install manually: https://caddyserver.com/download");
-      return { installed: false, skipped: true };
-    }
-  }
-
-  log.info(`Installing Caddy via: ${installCmd}`);
+  const spin = spinner("Installing Caddy...");
+  spin.start();
 
   let result;
+
   if (isWindows()) {
     result = await run("choco", ["install", "caddy", "-y"]);
   } else if (isMacOS()) {
@@ -150,28 +60,153 @@ export async function installCaddy(force: boolean = false): Promise<InstallResul
     } else if (await isCommandAvailable("pacman")) {
       result = await run("sh", ["-c", "sudo pacman -S --noconfirm caddy"]);
     } else {
-      return {
-        installed: false,
-        skipped: false,
-        error: "Cannot auto-install Caddy. No supported package manager found.",
-      };
+      spin.fail("No supported package manager found");
+      return { installed: false, skipped: false, error: "No supported package manager found" };
     }
   }
 
   if (result.exitCode !== 0) {
-    return {
-      installed: false,
-      skipped: false,
-      error: `Failed to install Caddy: ${result.stderr}`,
-    };
+    spin.fail("Failed to install Caddy");
+    return { installed: false, skipped: false, error: `Failed to install Caddy` };
   }
 
+  spin.succeed("Caddy installed successfully");
   return { installed: true, skipped: false };
 }
 
-/**
- * Ensure a tool is available, offering to install if missing.
- */
+export async function installMkcert(): Promise<InstallResult> {
+  if (await isCommandAvailable("mkcert")) {
+    return { installed: true, skipped: false };
+  }
+
+  log.info("mkcert is required for SSL certificates");
+
+  const proceed = await askPermission("mkcert");
+  if (!proceed) {
+    log.dim("Skipping mkcert installation.");
+    return { installed: false, skipped: true };
+  }
+
+  const spin = spinner("Installing mkcert...");
+  spin.start();
+
+  let result;
+
+  if (isWindows()) {
+    result = await run("choco", ["install", "mkcert", "-y"]);
+  } else if (isMacOS()) {
+    result = await run("brew", ["install", "mkcert"]);
+  } else {
+    result = await run("sh", ["-c", "curl -fsSL https://mkcert.dev/install.sh | sudo sh"]);
+  }
+
+  if (result.exitCode !== 0) {
+    spin.fail("Failed to install mkcert");
+    return { installed: false, skipped: false, error: `Failed to install mkcert` };
+  }
+
+  // Install the local CA
+  await run("mkcert", ["-install"]);
+
+  spin.succeed("mkcert installed successfully");
+  return { installed: true, skipped: false };
+}
+
+export async function installCloudflared(): Promise<InstallResult> {
+  if (await isCommandAvailable("cloudflared")) {
+    return { installed: true, skipped: false };
+  }
+
+  log.info("Cloudflared is required for sharing projects");
+
+  const proceed = await askPermission("cloudflared");
+  if (!proceed) {
+    log.dim("Skipping cloudflared installation.");
+    log.dim("Install manually: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/");
+    return { installed: false, skipped: true };
+  }
+
+  const spin = spinner("Installing cloudflared...");
+  spin.start();
+
+  if (isWindows()) {
+    // Windows: Download binary (no sudo needed)
+    spin.text = "Downloading cloudflared...";
+    const result = await run("powershell", [
+      "-Command",
+      "Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile '$env:USERPROFILE\\cloudflared.exe'"
+    ]);
+    if (result.exitCode === 0) {
+      spin.succeed("Cloudflared installed to ~/cloudflared.exe");
+      log.dim("Add to PATH or run: ~/cloudflared.exe tunnel --url http://localhost:PORT");
+    } else {
+      spin.fail("Failed to download cloudflared");
+      return { installed: false, skipped: false, error: "Failed to download cloudflared" };
+    }
+  } else if (isMacOS()) {
+    // macOS: Use brew (no sudo needed)
+    spin.text = "Installing via Homebrew...";
+    const result = await run("brew", ["install", "cloudflared"]);
+    if (result.exitCode !== 0) {
+      spin.fail("Failed to install via brew");
+      return { installed: false, skipped: false, error: "Failed to install via brew" };
+    }
+    spin.succeed("Cloudflared installed via Homebrew");
+  } else {
+    // Linux: Download binary to ~/.local/bin (no sudo needed)
+    const homeDir = process.env.HOME || "~";
+    const binDir = `${homeDir}/.local/bin`;
+    const binPath = `${binDir}/cloudflared`;
+
+    // Create directory if needed
+    spin.text = "Creating directory...";
+    await run("mkdir", ["-p", binDir]);
+
+    // Download binary with progress
+    spin.text = "Downloading cloudflared binary...";
+    const result = await run("curl", [
+      "-fsSL",
+      "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
+      "-o", binPath
+    ]);
+
+    if (result.exitCode !== 0) {
+      spin.fail("Failed to download cloudflared");
+      return { installed: false, skipped: false, error: "Failed to download cloudflared" };
+    }
+
+    // Make executable
+    spin.text = "Making executable...";
+    await run("chmod", ["+x", binPath]);
+
+    spin.succeed("Cloudflared installed");
+    log.dim(`Installed to ${binPath}`);
+    log.dim("Add ~/.local/bin to your PATH:");
+    log.dim("  echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.bashrc");
+    log.dim("  source ~/.bashrc");
+  }
+
+  // Verify installation
+  if (await isCommandAvailable("cloudflared")) {
+    return { installed: true, skipped: false };
+  }
+
+  // On Linux, check if it's in ~/.local/bin
+  if (!isWindows() && !isMacOS()) {
+    const homeDir = process.env.HOME || "~";
+    const binPath = `${homeDir}/.local/bin/cloudflared`;
+    if (await isCommandAvailable(binPath)) {
+      return { installed: true, skipped: false };
+    }
+  }
+
+  return {
+    installed: false,
+    skipped: false,
+    error: "Installation completed but cloudflared not found. Check your PATH."
+  };
+}
+
 export async function ensureTool(
   toolName: string,
   installFn: () => Promise<InstallResult>
@@ -187,26 +222,9 @@ export async function ensureTool(
     return true;
   }
 
-  if (result.skipped) {
-    return false;
-  }
-
   if (result.error) {
     log.error(result.error);
   }
 
   return false;
-}
-
-/**
- * Check and offer to install all required tools.
- */
-export async function ensureAllTools(): Promise<{
-  proxy: boolean;
-  ssl: boolean;
-}> {
-  const proxy = await ensureTool("caddy", () => installCaddy());
-  const ssl = proxy ? await ensureTool("mkcert", () => installMkcert()) : false;
-
-  return { proxy, ssl };
 }

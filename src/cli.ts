@@ -18,6 +18,7 @@ import { docker } from "./commands/docker.js";
 import { shell } from "./commands/shell.js";
 import { completions } from "./commands/completions.js";
 import { check } from "./commands/check.js";
+import { share } from "./commands/share.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -151,6 +152,20 @@ export function run() {
     .description("Generate shell completion scripts")
     .option("--shell <shell>", "Shell type (zsh, bash, fish)")
     .action(completions);
+
+  program
+    .command("share")
+    .description("Share project via Cloudflare tunnel")
+    .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
+    .option("--provider <provider>", "Share provider (cloudflare)")
+    .option("--qr", "Show QR code for mobile scanning")
+    .option("--copy", "Copy URL to clipboard")
+    .option("--json", "Output as JSON")
+    .option("--stop", "Stop sharing")
+    .option("--status", "Show share status")
+    .option("--url", "Show and copy tunnel URL")
+    .action(share);
 
   program.parse();
 }
