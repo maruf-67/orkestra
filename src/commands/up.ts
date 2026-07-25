@@ -13,6 +13,7 @@ import type { OrkestraConfig } from "../config/schema.js";
 
 interface UpOptions {
   dir?: string;
+  project?: string;
   port?: number;
   foreground?: boolean;
   all?: boolean;
@@ -146,7 +147,26 @@ export async function up(options: UpOptions) {
     return;
   }
 
-  const projectDir = resolve(options.dir || process.cwd());
+  // Resolve project directory by name or path
+  let projectDir: string;
+  if (options.project) {
+    // Look up project by name from state store
+    const { listProjects } = await import("../state/store.js");
+    const allProjects = await listProjects();
+    const match = allProjects.find(p =>
+      p.name.toLowerCase() === options.project!.toLowerCase() ||
+      p.path.toLowerCase().includes(options.project!.toLowerCase())
+    );
+    if (!match) {
+      log.error(`Project not found: ${options.project}`);
+      log.dim("Use 'orkestra list' to see all registered projects");
+      process.exit(1);
+    }
+    projectDir = match.path;
+    log.info(`Found project: ${match.name} (${match.path})`);
+  } else {
+    projectDir = resolve(options.dir || process.cwd());
+  }
 
   // Check if already running
   const existing = await getProject(projectDir);

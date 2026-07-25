@@ -69,6 +69,7 @@ export function run() {
     .command("up")
     .description("Start dev server")
     .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
     .option("--port <port>", "Dev server port", parseInt)
     .option("-f, --foreground", "Run in foreground (see output directly)")
     .option("-a, --all", "Start all registered projects")
@@ -78,6 +79,7 @@ export function run() {
     .command("down")
     .description("Stop dev server")
     .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
     .option("-a, --all", "Stop all running servers")
     .action(down);
 
@@ -99,6 +101,7 @@ export function run() {
     .command("logs")
     .description("View dev server logs")
     .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
     .option("-f, --follow", "Follow logs in real-time")
     .option("--since <time>", "Show logs since (e.g., 5m, 1h, 2d, 2024-01-01)")
     .option("--stream <stream>", "Filter by stream (stdout, stderr)")
@@ -110,6 +113,7 @@ export function run() {
     .command("open")
     .description("Open project in browser")
     .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
     .action(open);
 
   program

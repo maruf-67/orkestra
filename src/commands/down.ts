@@ -6,6 +6,7 @@ import { run } from "../utils/exec.js";
 
 interface DownOptions {
   dir?: string;
+  project?: string;
   all?: boolean;
 }
 
@@ -71,7 +72,24 @@ export async function down(options: DownOptions) {
     return;
   }
 
-  const projectDir = resolve(options.dir || process.cwd());
+  // Resolve project directory by name or path
+  let projectDir: string;
+  if (options.project) {
+    const { listProjects } = await import("../state/store.js");
+    const allProjects = await listProjects();
+    const match = allProjects.find(p =>
+      p.name.toLowerCase() === options.project!.toLowerCase() ||
+      p.path.toLowerCase().includes(options.project!.toLowerCase())
+    );
+    if (!match) {
+      log.error(`Project not found: ${options.project}`);
+      log.dim("Use 'orkestra list' to see all registered projects");
+      process.exit(1);
+    }
+    projectDir = match.path;
+  } else {
+    projectDir = resolve(options.dir || process.cwd());
+  }
 
   const project = await getProject(projectDir);
   if (!project) {
