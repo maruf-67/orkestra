@@ -92,7 +92,7 @@ function formatProjectJson(project: ProjectState, isRunning: boolean, uptime: st
   };
 }
 
-function printVerbose(project: ProjectState, isRunning: boolean) {
+function printVerbose(project: ProjectState, isRunning: boolean, memory?: string) {
   log.plain("");
   const statusIcon = isRunning ? "\x1b[32m●\x1b[0m" : "\x1b[31m○\x1b[0m";
   const statusText = isRunning ? "\x1b[32mrunning\x1b[0m" : "\x1b[31mstopped\x1b[0m";
@@ -108,6 +108,7 @@ function printVerbose(project: ProjectState, isRunning: boolean) {
 
   if (isRunning) {
     log.plain(`    Started:    ${project.startedAt || "-"}`);
+    log.plain(`    Memory:     ${memory || "-"}`);
   }
 }
 
@@ -170,9 +171,9 @@ export async function status(options: StatusOptions) {
     const timestamp = new Date().toLocaleTimeString();
     log.dim(`Refreshed at ${timestamp} (Ctrl+C to stop)\n`);
 
-    for (const { project, isRunning } of results) {
+    for (const { project, isRunning, memory } of results) {
       if (options.verbose) {
-        printVerbose(project, isRunning);
+        printVerbose(project, isRunning, memory);
       } else {
         printCompact(project, isRunning);
       }
@@ -220,9 +221,9 @@ export async function status(options: StatusOptions) {
   }
 
   // Normal output
-  for (const { project, isRunning } of results) {
+  for (const { project, isRunning, memory } of results) {
     if (options.verbose) {
-      printVerbose(project, isRunning);
+      printVerbose(project, isRunning, memory);
     } else {
       printCompact(project, isRunning);
     }
