@@ -283,14 +283,49 @@ export async function up(options: UpOptions) {
     process.exit(1);
   }
 
+  // Get mise environment if available
+  const env = {
+    ...process.env,
+    PORT: String(port),
+  };
+
+  // Check if mise is available and use its environment
+  if (await isCommandAvailable("mise")) {
+    try {
+      const { execSync } = await import("node:child_process");
+      // Use mise env -j for JSON output
+      const miseEnv = execSync("mise env -j", { encoding: "utf-8", stdio: "pipe" });
+      const miseVars = JSON.parse(miseEnv);
+      for (const [key, value] of Object.entries(miseVars)) {
+        if (typeof value === "string") {
+          env[key] = value;
+        }
+      }
+    } catch {
+      // Fallback: try without -j flag and parse export format
+      try {
+        const { execSync } = await import("node:child_process");
+        const miseEnv = execSync("mise env", { encoding: "utf-8", stdio: "pipe" });
+        const lines = miseEnv.split("\n").filter(line => line.startsWith("export ") || line.includes("="));
+        for (const line of lines) {
+          // Remove 'export ' prefix if present
+          const cleaned = line.replace(/^export\s+/, "");
+          const eqIndex = cleaned.indexOf("=");
+          if (eqIndex > 0) {
+            const key = cleaned.substring(0, eqIndex).trim();
+            const value = cleaned.substring(eqIndex + 1).trim().replace(/^['"]|['"]$/g, "");
+            env[key] = value;
+          }
+        }
+      } catch {}
+    }
+  }
+
   const child = spawn(execCmd, execArgs, {
     cwd: projectDir,
     stdio: options.foreground ? "inherit" : "pipe",
     detached: !options.foreground,
-    env: {
-      ...process.env,
-      PORT: String(port),
-    },
+    env,
   });
 
   // Capture logs to file (unless foreground mode)
