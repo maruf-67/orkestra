@@ -213,7 +213,9 @@ export async function share(options: ShareOptions) {
     log.plain(`  Local:     https://${project.domain}`);
     log.plain(`  Public:    ${session.publicUrl}`);
     log.plain(`  Provider:  ${provider.name}`);
-    log.plain(`  Expires:   When terminal exits`);
+    log.plain("");
+    log.warn("Quick Tunnel is temporary — URL expires when terminal closes");
+    log.dim("Keep this terminal open while sharing");
     log.plain("");
 
     // Show QR code if requested
