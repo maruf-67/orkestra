@@ -34,7 +34,7 @@ const macosConfig: PlatformConfig = {
 const windowsConfig: PlatformConfig = {
   hostsFile: "C:\\Windows\\System32\\drivers\\etc\\hosts",
   shell: "powershell.exe",
-  shellArgs: ["-Command"],
+  shellArgs: ["-NoExit", "-Command"],  // -NoExit keeps window open for interactive use
   configDir: join(homedir(), ".orkestra"),
   caddyConfigDir: join(homedir(), "AppData", "Roaming", "Caddy"),
   caddyReloadCmd: ["caddy", "reload", "--config", join(homedir(), "AppData", "Roaming", "Caddy", "Caddyfile")],

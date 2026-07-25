@@ -1,5 +1,7 @@
 import { log, heading, table } from "../utils/logger.js";
 import { listProjects, isProcessAlive, ProjectState } from "../state/store.js";
+import { isWindows, isMacOS, isLinux } from "../platform/index.js";
+import { run } from "../utils/exec.js";
 
 interface StatusOptions {
   json?: boolean;
@@ -22,17 +24,52 @@ function calculateUptime(startedAt?: string): string {
   return `${seconds}s`;
 }
 
+/**
+ * Get memory usage for a process (cross-platform).
+ */
 async function getMemoryUsage(pid: number): Promise<string> {
   try {
-    const { readFile } = await import("node:fs/promises");
-    const status = await readFile(`/proc/${pid}/status`, "utf-8");
-    const match = status.match(/VmRSS:\s+(\d+)\s+kB/);
-    if (match) {
-      const kb = parseInt(match[1]);
-      if (kb > 1024) {
-        return `${(kb / 1024).toFixed(1)} MB`;
+    if (isLinux()) {
+      // Linux: Read from /proc/<pid>/status
+      const { readFile } = await import("node:fs/promises");
+      const status = await readFile(`/proc/${pid}/status`, "utf-8");
+      const match = status.match(/VmRSS:\s+(\d+)\s+kB/);
+      if (match) {
+        const kb = parseInt(match[1]);
+        if (kb > 1024) {
+          return `${(kb / 1024).toFixed(1)} MB`;
+        }
+        return `${kb} KB`;
       }
-      return `${kb} KB`;
+    } else if (isMacOS()) {
+      // macOS: Use ps command
+      const result = await run("ps", ["-o", "rss=", "-p", String(pid)]);
+      if (result.exitCode === 0) {
+        const kb = parseInt(result.stdout.trim());
+        if (!isNaN(kb)) {
+          if (kb > 1024) {
+            return `${(kb / 1024).toFixed(1)} MB`;
+          }
+          return `${kb} KB`;
+        }
+      }
+    } else if (isWindows()) {
+      // Windows: Use tasklist command
+      const result = await run("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"]);
+      if (result.exitCode === 0) {
+        // Parse CSV output: "node.exe","1234","Console","1","12,345 K"
+        const match = result.stdout.match(/"(\d[\d,]*\s*K)"/);
+        if (match) {
+          const kbStr = match[1].replace(/,/g, "").replace(/\s*K/, "");
+          const kb = parseInt(kbStr);
+          if (!isNaN(kb)) {
+            if (kb > 1024) {
+              return `${(kb / 1024).toFixed(1)} MB`;
+            }
+            return `${kb} KB`;
+          }
+        }
+      }
     }
   } catch {}
   return "-";

@@ -85,7 +85,7 @@ export async function docker(options: DockerOptions) {
       return;
     }
 
-    const composePath = await findComposeFile(dir);
+    const composePath = await findComposeFile(projectDir);
     if (!composePath) {
       log.info("No docker-compose file found in this directory.");
       log.dim("Commands:");

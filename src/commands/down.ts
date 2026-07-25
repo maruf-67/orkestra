@@ -1,10 +1,44 @@
 import { resolve } from "node:path";
 import { log, spinner, heading } from "../utils/logger.js";
 import { getProject, setProjectStopped, isProcessAlive } from "../state/store.js";
+import { isWindows } from "../platform/index.js";
+import { run } from "../utils/exec.js";
 
 interface DownOptions {
   dir?: string;
   all?: boolean;
+}
+
+/**
+ * Kill a process and all its children (process tree).
+ */
+async function killProcessTree(pid: number): Promise<void> {
+  if (isWindows()) {
+    // Windows: Use taskkill to kill process tree
+    // /T = kill process tree, /F = force
+    await run("taskkill", ["/F", "/T", "/PID", String(pid)]);
+  } else {
+    // Unix: Send SIGTERM to process group
+    // First try to kill the process group
+    try {
+      process.kill(-pid, "SIGTERM");
+    } catch {
+      // If process group kill fails, kill individual process
+      process.kill(pid, "SIGTERM");
+    }
+
+    // Wait a bit for graceful shutdown
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // If still alive, force kill
+    if (await isProcessAlive(pid)) {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        process.kill(pid, "SIGKILL");
+      }
+    }
+  }
 }
 
 export async function down(options: DownOptions) {
@@ -24,7 +58,7 @@ export async function down(options: DownOptions) {
     let stopped = 0;
     for (const project of running) {
       if (project.pid && await isProcessAlive(project.pid)) {
-        process.kill(project.pid, "SIGTERM");
+        await killProcessTree(project.pid);
         await setProjectStopped(project.path);
         log.success(`Stopped ${project.name} (PID: ${project.pid})`);
         stopped++;
@@ -41,7 +75,7 @@ export async function down(options: DownOptions) {
 
   const project = await getProject(projectDir);
   if (!project) {
-    log.error("Project not registered. Run `orkestra register` first.");
+    log.error("Project not registered. Run `orkestra init` first.");
     process.exit(1);
   }
 
@@ -60,7 +94,7 @@ export async function down(options: DownOptions) {
   spin.start();
 
   try {
-    process.kill(project.pid, "SIGTERM");
+    await killProcessTree(project.pid);
     await setProjectStopped(projectDir);
     spin.succeed(`Stopped ${project.name}`);
   } catch (error) {
