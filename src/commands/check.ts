@@ -1,15 +1,13 @@
-import { resolve, basename, join } from "node:path";
+import { resolve, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { log, heading, spinner } from "../utils/logger.js";
-import { loadConfig } from "../config/loader.js";
-import { validateConfig, orkestraConfigSchema } from "../config/schema.js";
+import { validateConfig } from "../config/schema.js";
 import { detectFramework } from "../detection/framework.js";
 import { detectProxy } from "../detection/proxy.js";
-import { isCommandAvailable } from "../utils/exec.js";
-import { isWindows } from "../platform/index.js";
 import { parse as parseYaml } from "yaml";
 import prompts from "prompts";
+import { isWindows } from "../platform/index.js";
 
 interface CheckOptions {
   dir?: string;
@@ -123,7 +121,7 @@ export async function check(options: CheckOptions) {
     if (portAvailable) {
       portSpin.succeed(`Port ${rawConfig.port} is available`);
     } else {
-      portSpin.warn(`Port ${rawConfig.port} is in use`);
+      portSpin.succeed(`Port ${rawConfig.port} is in use`);
       results.warnings.push(`Port ${rawConfig.port} may be occupied by another process`);
     }
   }
@@ -210,7 +208,7 @@ function printResults(results: CheckResult) {
   }
 }
 
-async function fixIssues(projectDir: string, results: CheckResult) {
+async function fixIssues(_projectDir: string, results: CheckResult) {
   log.info("Attempting to fix issues...");
 
   // Fix missing startCommand

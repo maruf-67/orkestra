@@ -8,9 +8,8 @@ export class Pm2Process implements ProcessProvider {
     return isCommandAvailable("pm2");
   }
 
-  async start(name: string, command: string, args: string[], env?: Record<string, string>): Promise<number> {
-    const envArgs = env ? Object.entries(env).map(([k, v]) => `${k}=${v}`) : [];
-    const result = await run("pm2", ["start", command, "--name", name, "--", ...args]);
+  async start(name: string, command: string, args: string[], _env?: Record<string, string>): Promise<number> {
+    await run("pm2", ["start", command, "--name", name, "--", ...args]);
     // Get the PID from pm2
     const listResult = await run("pm2", ["jlist"]);
     if (listResult.exitCode === 0) {

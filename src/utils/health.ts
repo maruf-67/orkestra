@@ -6,7 +6,6 @@ import { readFile } from "node:fs/promises";
 import { loadConfig } from "../config/loader.js";
 import { detectFramework } from "../detection/framework.js";
 import { findAvailablePort } from "../state/ports.js";
-import { registerProjectAuto } from "./registration.js";
 
 const MAX_RESTART_ATTEMPTS = 3;
 const RESTART_DELAY_MS = 2000;
@@ -63,7 +62,7 @@ export class HealthMonitor {
    * Stop all monitoring.
    */
   stopAll(): void {
-    for (const [path, interval] of this.monitors) {
+    for (const [, interval] of this.monitors) {
       clearInterval(interval);
     }
     this.monitors.clear();

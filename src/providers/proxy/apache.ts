@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProxyProvider, ProxyConfig } from "../types.js";

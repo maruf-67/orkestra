@@ -1,4 +1,4 @@
-import { log, heading } from "../utils/logger.js";
+// No imports needed for this command
 
 interface CompletionsOptions {
   shell?: string;

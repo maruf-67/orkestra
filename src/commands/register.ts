@@ -1,7 +1,7 @@
 import { resolve, basename } from "node:path";
 import { log, spinner, heading } from "../utils/logger.js";
 import { detectFramework } from "../detection/framework.js";
-import { registerProject, getProject } from "../state/store.js";
+import { getProject } from "../state/store.js";
 import { loadConfig } from "../config/loader.js";
 import { registerProjectAuto, detectPortFromProject } from "../utils/registration.js";
 import prompts from "prompts";

@@ -1,4 +1,4 @@
-import { resolve, join, basename } from "node:path";
+import { resolve, join } from "node:path";
 import { unlink, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -86,7 +86,7 @@ export async function remove(options: RemoveOptions) {
   log.success("Project removed successfully!");
 }
 
-async function removeLogs(projectDir: string, projectName: string): Promise<boolean> {
+async function removeLogs(projectDir: string, _projectName: string): Promise<boolean> {
   const logsDir = join(projectDir, ".orkestra", "logs");
   if (!existsSync(logsDir)) {
     return false;

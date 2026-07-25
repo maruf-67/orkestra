@@ -3,13 +3,13 @@ import { readFile } from "node:fs/promises";
 import { detectFramework } from "../detection/framework.js";
 import { detectProxy } from "../detection/proxy.js";
 import { HostsFileProvider } from "../providers/hosts/hosts.js";
-import { registerProject, getProject, ProjectState } from "../state/store.js";
+import { registerProject, ProjectState } from "../state/store.js";
 import { findAvailablePort } from "../state/ports.js";
 import { loadConfig } from "../config/loader.js";
 import { OrkestraConfig } from "../config/schema.js";
 import { addAllowedHost } from "./host-config.js";
 import { log } from "../utils/logger.js";
-import { installCaddy, installMkcert, setAutoInstall } from "./installer.js";
+import { installCaddy, setAutoInstall } from "./installer.js";
 import type { FrameworkInfo } from "../providers/types.js";
 
 export interface RegistrationOptions {

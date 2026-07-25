@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProxyProvider, ProxyConfig } from "../types.js";
 import { run, isCommandAvailable, sudoWriteFile } from "../../utils/exec.js";
@@ -78,7 +77,7 @@ entryPoints:
     await this.reload();
   }
 
-  async unregister(domain: string): Promise<void> {
+  async unregister(_domain: string): Promise<void> {
     // Traefik uses file-based config, we'd need to parse and remove
     // For now, just reload after manual config edit
     await this.reload();

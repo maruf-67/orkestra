@@ -1,5 +1,5 @@
 import { resolve, basename, join } from "node:path";
-import { writeFile, readFile, appendFile } from "node:fs/promises";
+import { writeFile, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { log, spinner, heading } from "../utils/logger.js";
 import { detectFramework } from "../detection/framework.js";

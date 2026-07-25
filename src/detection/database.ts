@@ -68,14 +68,14 @@ async function detectFromDockerCompose(dir: string): Promise<string[]> {
 async function detectFromPackageJson(dir: string): Promise<string[]> {
   try {
     const pkg = JSON.parse(await readFile(join(dir, "package.json"), "utf-8"));
-    const allDeps = { ...(pkg.dependencies as object), ...(pkg.devDependencies as object) };
+    const allDeps: Record<string, unknown> = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
     const dbs: string[] = [];
 
-    if (allDeps?.["pg"] || allDeps?.["postgres"]) dbs.push("postgresql");
-    if (allDeps?.["mysql2"] || allDeps?.["mysql"]) dbs.push("mysql");
-    if (allDeps?.["better-sqlite3"] || allDeps?.["sqlite3"]) dbs.push("sqlite");
-    if (allDeps?.["mongodb"] || allDeps?.["mongoose"]) dbs.push("mongodb");
-    if (allDeps?.["redis"] || allDeps?.["ioredis"]) dbs.push("redis");
+    if (allDeps["pg"] || allDeps["postgres"]) dbs.push("postgresql");
+    if (allDeps["mysql2"] || allDeps["mysql"]) dbs.push("mysql");
+    if (allDeps["better-sqlite3"] || allDeps["sqlite3"]) dbs.push("sqlite");
+    if (allDeps["mongodb"] || allDeps["mongoose"]) dbs.push("mongodb");
+    if (allDeps["redis"] || allDeps["ioredis"]) dbs.push("redis");
 
     return dbs;
   } catch {

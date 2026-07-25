@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { log, heading, table, spinner } from "../utils/logger.js";
-import { detectDatabases, type DatabaseInfo } from "../detection/database.js";
+import { detectDatabases } from "../detection/database.js";
 import { run } from "../utils/exec.js";
 import prompts from "prompts";
 

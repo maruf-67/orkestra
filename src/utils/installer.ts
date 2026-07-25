@@ -1,5 +1,5 @@
 import { isCommandAvailable, run } from "./exec.js";
-import { isWindows, isMacOS, isLinux } from "../platform/index.js";
+import { isWindows, isMacOS } from "../platform/index.js";
 import { log } from "./logger.js";
 import prompts from "prompts";
 
@@ -22,7 +22,7 @@ export function setAutoInstall(enabled: boolean): void {
 /**
  * Ask user permission before installing a tool.
  */
-async function askPermission(toolName: string, installCmd: string): Promise<boolean> {
+async function askPermission(toolName: string, _installCmd: string): Promise<boolean> {
   // Skip prompt in auto-install mode
   if (autoInstall) {
     log.info(`Auto-installing ${toolName} (CI/CD mode)`);

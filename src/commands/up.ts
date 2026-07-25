@@ -304,7 +304,7 @@ export async function up(options: UpOptions) {
   }
 
   // Get mise environment if available
-  const env = {
+  const env: Record<string, string | undefined> = {
     ...process.env,
     PORT: String(port),
   };

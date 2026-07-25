@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { log, heading, table, spinner } from "../utils/logger.js";
 import { run, isCommandAvailable } from "../utils/exec.js";
-import prompts from "prompts";
 
 interface DockerOptions {
   action?: "list" | "up" | "down" | "status";

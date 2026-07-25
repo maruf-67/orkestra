@@ -1,8 +1,7 @@
-import { resolve, join } from "node:path";
-import { mkdir, writeFile, readFile, stat, readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { mkdir, readFile, stat, readdir } from "node:fs/promises";
 import { existsSync, createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { getPlatform } from "../platform/index.js";
 
 const LOG_DIR = "logs";
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB per log file

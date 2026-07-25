@@ -2,7 +2,6 @@ import { resolve, join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { log, heading } from "../utils/logger.js";
-import prompts from "prompts";
 
 interface EnvOptions {
   dir?: string;
