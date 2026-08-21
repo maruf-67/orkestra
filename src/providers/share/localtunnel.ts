@@ -1,61 +1,37 @@
 import { spawn, ChildProcess } from "node:child_process";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ShareProvider, ShareOptions, ShareSession, ShareStatus } from "./types.js";
 import { isCommandAvailable, run } from "../../utils/exec.js";
-import { isWindows, isMacOS } from "../../platform/index.js";
-import { log } from "../../utils/logger.js";
+import { isWindows } from "../../platform/index.js";
 
-export class CloudflareShare implements ShareProvider {
-  readonly name = "cloudflare";
+export class LocalTunnelShare implements ShareProvider {
+  readonly name = "localtunnel";
   readonly priority = 100;
 
   async detect(): Promise<boolean> {
-    // Check standard PATH first
-    if (await isCommandAvailable("cloudflared")) {
-      return true;
-    }
-
-    // Check ~/.local/bin (common install location)
-    const homeDir = process.env.HOME || "~";
-    const localBin = `${homeDir}/.local/bin/cloudflared`;
-    if (await isCommandAvailable(localBin)) {
-      return true;
-    }
-
-    return false;
+    return isCommandAvailable("lt");
   }
 
   async start(options: ShareOptions): Promise<ShareSession> {
-    const logFile = join(homedir(), ".orkestra", "shares", `${options.projectName}.log`);
     const logDir = join(homedir(), ".orkestra", "shares");
+    const logFile = join(logDir, `${options.projectName}.log`);
 
     if (!existsSync(logDir)) {
       await mkdir(logDir, { recursive: true });
     }
 
-    // Clear old log file to avoid reading stale URLs
+    // Clear old log file
     if (existsSync(logFile)) {
       await writeFile(logFile, "", "utf-8");
     }
 
-    // Find cloudflared binary
-    let cloudflaredPath = "cloudflared";
-    if (!(await isCommandAvailable("cloudflared"))) {
-      const homeDir = process.env.HOME || "~";
-      const localBin = `${homeDir}/.local/bin/cloudflared`;
-      if (await isCommandAvailable(localBin)) {
-        cloudflaredPath = localBin;
-      }
-    }
-
-    // Start cloudflared tunnel
-    const child = spawn(cloudflaredPath, [
-      "tunnel",
-      "--url", `http://localhost:${options.port}`,
-      "--logfile", logFile,
+    // Start localtunnel process
+    const child = spawn("lt", [
+      "--port", String(options.port),
+      "--subdomain", options.projectName,
     ], {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
@@ -63,11 +39,11 @@ export class CloudflareShare implements ShareProvider {
 
     child.unref();
 
-    // Wait for URL to appear in output
-    const publicUrl = await this.waitForUrl(child, logFile, 30000);
+    // Wait for URL to appear
+    const publicUrl = await this.waitForUrl(child, 30000);
 
     if (!publicUrl) {
-      throw new Error("Failed to get Cloudflare tunnel URL");
+      throw new Error("Failed to get localtunnel URL");
     }
 
     return {
@@ -80,12 +56,10 @@ export class CloudflareShare implements ShareProvider {
     };
   }
 
-  private async waitForUrl(child: ChildProcess, logFile: string, timeout: number): Promise<string | null> {
+  private async waitForUrl(child: ChildProcess, timeout: number): Promise<string | null> {
     return new Promise((resolve) => {
-      const startTime = Date.now();
       let output = "";
 
-      // Listen on stdout for URL
       child.stdout?.on("data", (data: Buffer) => {
         output += data.toString();
         const url = this.extractUrl(output);
@@ -94,7 +68,6 @@ export class CloudflareShare implements ShareProvider {
         }
       });
 
-      // Listen on stderr for URL (cloudflared outputs to stderr)
       child.stderr?.on("data", (data: Buffer) => {
         output += data.toString();
         const url = this.extractUrl(output);
@@ -103,37 +76,15 @@ export class CloudflareShare implements ShareProvider {
         }
       });
 
-      // Also check log file periodically
-      const checkLog = setInterval(async () => {
-        if (Date.now() - startTime > timeout) {
-          clearInterval(checkLog);
-          resolve(null);
-          return;
-        }
-
-        try {
-          if (existsSync(logFile)) {
-            const content = await readFile(logFile, "utf-8");
-            const url = this.extractUrl(content);
-            if (url) {
-              clearInterval(checkLog);
-              resolve(url);
-            }
-          }
-        } catch {}
-      }, 1000);
-
-      // Timeout
       setTimeout(() => {
-        clearInterval(checkLog);
         resolve(null);
       }, timeout);
     });
   }
 
   private extractUrl(output: string): string | null {
-    // Match Cloudflare Quick Tunnel URL pattern
-    const match = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+    // Match localtunnel URL pattern
+    const match = output.match(/https?:\/\/[a-z0-9-]+\.loca\.lt/);
     return match ? match[0] : null;
   }
 
@@ -186,12 +137,6 @@ export class CloudflareShare implements ShareProvider {
   }
 
   getInstallCommand(): string {
-    if (isWindows()) {
-      return "choco install cloudflared -y";
-    }
-    if (isMacOS()) {
-      return "brew install cloudflared";
-    }
-    return "sudo apt install -y cloudflared || sudo dnf install -y cloudflared";
+    return "npm install -g localtunnel";
   }
 }

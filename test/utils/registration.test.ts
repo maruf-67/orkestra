@@ -114,6 +114,32 @@ describe("registration utility", () => {
       expect(port).toBe(8080);
     });
 
+    it("detects port from composer.json octane:start script (Laravel)", async () => {
+      await writeFile(
+        join(testDir, "composer.json"),
+        JSON.stringify({
+          scripts: {
+            dev: [
+              "npx concurrently 'php artisan octane:start --host=0.0.0.0 --port=8005'",
+            ],
+          },
+        })
+      );
+
+      const port = await detectPortFromProject(testDir, "laravel");
+      expect(port).toBe(8005);
+    });
+
+    it("detects port from .rr.yaml (RoadRunner)", async () => {
+      await writeFile(
+        join(testDir, ".rr.yaml"),
+        "version: '3'\nhttp:\n  address: 127.0.0.1:8005\n"
+      );
+
+      const port = await detectPortFromProject(testDir, "laravel");
+      expect(port).toBe(8005);
+    });
+
     it("returns null when no port found", async () => {
       await writeFile(
         join(testDir, "package.json"),

@@ -9,8 +9,8 @@ import { loadConfig } from "../config/loader.js";
 import { detectFramework } from "../detection/framework.js";
 import { detectShareProvider, type ShareSession } from "../providers/share/index.js";
 import { printQRCode } from "../utils/qr.js";
-import { isCommandAvailable, run } from "../utils/exec.js";
-import { installCloudflared } from "../utils/installer.js";
+import { run } from "../utils/exec.js";
+import { installLocaltunnel } from "../utils/installer.js";
 import { addAllowedHost } from "../utils/host-config.js";
 import { isWindows } from "../platform/index.js";
 
@@ -60,7 +60,7 @@ export async function share(options: ShareOptions) {
 
   // Handle share status
   if (options.status) {
-    await showStatus(options);
+    await showStatus();
     return;
   }
 
@@ -154,11 +154,11 @@ export async function share(options: ShareOptions) {
   // Try to detect provider first
   let provider = await detectShareProvider(options.provider);
 
-  // If not found, try to install cloudflared
+  // If not found, try to install localtunnel
   if (!provider) {
     providerSpin.stop();
 
-    const installResult = await installCloudflared();
+    const installResult = await installLocaltunnel();
     if (installResult.installed) {
       // Retry detection after install
       provider = await detectShareProvider(options.provider);
@@ -167,12 +167,9 @@ export async function share(options: ShareOptions) {
 
   if (!provider) {
     providerSpin.fail("No share provider available");
-    log.warn("Cloudflare tunnel could not be installed.");
+    log.warn("Localtunnel could not be installed.");
     log.dim("Install manually:");
-    log.dim("  macOS:      brew install cloudflared");
-    log.dim("  Linux:      curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o ~/.local/bin/cloudflared && chmod +x ~/.local/bin/cloudflared");
-    log.dim("  Windows:    choco install cloudflared");
-    log.dim("  Download:   https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/");
+    log.dim("  npm install -g localtunnel");
     process.exit(1);
   }
 
@@ -195,12 +192,8 @@ export async function share(options: ShareOptions) {
 
     tunnelSpin.succeed("Tunnel established!");
 
-    // Auto-add both tunnel domain AND local domain to allowedHosts
-    const tunnelDomain = new URL(session.publicUrl).hostname;
+    // Auto-add local domain to allowedHosts
     const localDomain = project.domain;
-
-    log.dim(`Adding ${tunnelDomain} to allowedHosts...`);
-    await addAllowedHost(projectDir, tunnelDomain);
 
     if (localDomain) {
       log.dim(`Adding ${localDomain} to allowedHosts...`);
@@ -214,7 +207,7 @@ export async function share(options: ShareOptions) {
     log.plain(`  Public:    ${session.publicUrl}`);
     log.plain(`  Provider:  ${provider.name}`);
     log.plain("");
-    log.warn("Quick Tunnel is temporary — URL expires when terminal closes");
+    log.warn("Tunnel is temporary — URL expires when terminal closes");
     log.dim("Keep this terminal open while sharing");
     log.plain("");
 
@@ -286,7 +279,7 @@ async function stopShare(options: ShareOptions) {
   log.success("Tunnel stopped.");
 }
 
-async function showStatus(options: ShareOptions) {
+async function showStatus() {
   heading("Share Status");
 
   const sessions = await loadSessions();

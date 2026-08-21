@@ -15,25 +15,34 @@ export interface ExecResult {
 export async function run(
   command: string,
   args: string[] = [],
-  options: { cwd?: string; env?: Record<string, string>; sudo?: boolean } = {}
+  options: { cwd?: string; env?: Record<string, string>; sudo?: boolean; stdin?: string | "inherit" | "pipe" } = {}
 ): Promise<ExecResult> {
   const platform = getPlatform();
+
+  const execaOpts: any = {
+    cwd: options.cwd,
+    env: { ...process.env, ...options.env },
+    reject: false,
+    stdout: "pipe",
+    stderr: "pipe",
+  };
+
+  if (typeof options.stdin === "string") {
+    execaOpts.input = options.stdin;
+  } else {
+    execaOpts.stdin = options.stdin ?? "inherit";
+  }
 
   // Windows: no sudo, run directly
   if (isWindows()) {
     try {
       const result = await execa(command, args, {
-        cwd: options.cwd,
-        env: { ...process.env, ...options.env },
+        ...execaOpts,
         shell: true,
-        reject: false,
-        stdin: "inherit",
-        stdout: "pipe",
-        stderr: "pipe",
       });
       return {
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout: String(result.stdout ?? ""),
+        stderr: String(result.stderr ?? ""),
         exitCode: result.exitCode ?? 1,
       };
     } catch (error) {
@@ -51,17 +60,12 @@ export async function run(
 
   try {
     const result = await execa(cmd, cmdArgs, {
-      cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      ...execaOpts,
       shell: platform.shell,
-      reject: false,
-      stdin: "inherit",
-      stdout: "pipe",
-      stderr: "pipe",
     });
     return {
-      stdout: result.stdout,
-      stderr: result.stderr,
+      stdout: String(result.stdout ?? ""),
+      stderr: String(result.stderr ?? ""),
       exitCode: result.exitCode ?? 1,
     };
   } catch (error) {

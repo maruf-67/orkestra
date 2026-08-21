@@ -57,6 +57,7 @@ orkestra down
 | `orkestra remove` | Remove project completely |
 | `orkestra doctor` | Check system capabilities |
 | `orkestra completions` | Generate shell completions |
+| `orkestra share` | Share project via tunnel |
 
 ## Platform Support
 
@@ -138,6 +139,7 @@ startCommand: "pnpm dev"
 - **Node.js** 22+
 - **Caddy** (auto-installed if missing)
 - **mkcert** (auto-installed if missing)
+- **localtunnel** (auto-installed if sharing)
 
 ## Contributing
 

@@ -1,5 +1,6 @@
-import { resolve, basename } from "node:path";
+import { resolve, basename, join } from "node:path";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { detectFramework } from "../detection/framework.js";
 import { detectProxy } from "../detection/proxy.js";
 import { HostsFileProvider } from "../providers/hosts/hosts.js";
@@ -8,6 +9,7 @@ import { findAvailablePort } from "../state/ports.js";
 import { loadConfig } from "../config/loader.js";
 import { OrkestraConfig } from "../config/schema.js";
 import { addAllowedHost } from "./host-config.js";
+import { syncLaravelProject } from "./laravel.js";
 import { log } from "../utils/logger.js";
 import { installCaddy, setAutoInstall } from "./installer.js";
 import type { FrameworkInfo } from "../providers/types.js";
@@ -46,16 +48,41 @@ export async function detectPortFromProject(dir: string, frameworkName: string):
   if (frameworkName === "laravel") {
     try {
       const composer = JSON.parse(await readFile(resolve(dir, "composer.json"), "utf-8"));
-      const serveScript = composer.scripts?.serve || "";
-      const portMatch = serveScript.match(/--port[= ](\d+)/);
-      if (portMatch) return parseInt(portMatch[1]);
+      const scripts = composer.scripts || {};
+      const allScriptStrings: string[] = [];
+
+      for (const val of Object.values(scripts)) {
+        if (Array.isArray(val)) {
+          allScriptStrings.push(...val.filter((x): x is string => typeof x === "string"));
+        } else if (typeof val === "string") {
+          allScriptStrings.push(val);
+        }
+      }
+
+      for (const s of allScriptStrings) {
+        const octaneMatch = s.match(/octane:start[^\s"']*(\s+--host=\S+)?\s+--port=(\d+)/);
+        if (octaneMatch) return parseInt(octaneMatch[2]);
+        const portMatch = s.match(/--port[= ](\d+)/);
+        if (portMatch && !s.includes("reverb:start")) return parseInt(portMatch[1]);
+      }
+    } catch {}
+
+    // Try .rr.yaml (RoadRunner)
+    try {
+      const rr = await readFile(resolve(dir, ".rr.yaml"), "utf-8");
+      const rrMatch = rr.match(/address:\s*["']?[^"'\n:]+:(\d+)["']?/);
+      if (rrMatch) return parseInt(rrMatch[1]);
     } catch {}
   }
 
   // Try .env
   try {
     const env = await readFile(resolve(dir, ".env"), "utf-8");
-    const portMatch = env.match(/^PORT=(\d+)/m);
+    const portMatch =
+      env.match(/^PORT=(\d+)/m) ||
+      env.match(/^APP_PORT=(\d+)/m) ||
+      env.match(/^SERVER_PORT=(\d+)/m) ||
+      env.match(/^OCTANE_PORT=(\d+)/m);
     if (portMatch) return parseInt(portMatch[1]);
   } catch {}
 
@@ -140,6 +167,20 @@ export async function registerProjectAuto(
 
   // Add allowed host for Vite/Nuxt
   await addAllowedHost(projectDir, domain);
+
+  // Sync Laravel project files (composer.json, .rr.yaml, .env, pnpm-workspace.yaml)
+  const isLaravel =
+    framework?.name?.toLowerCase() === "laravel" ||
+    existsSync(join(projectDir, "artisan"));
+
+  if (isLaravel) {
+    await syncLaravelProject(projectDir, {
+      port,
+      domain,
+      reverbPort: (config as any)?.reverbPort,
+      reverbDomain: (config as any)?.reverbDomain,
+    });
+  }
 
   // Save to state store
   const project: ProjectState = {

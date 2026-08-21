@@ -1,10 +1,10 @@
 import type { ShareProvider } from "./types.js";
-import { CloudflareShare } from "./cloudflare.js";
+import { LocalTunnelShare } from "./localtunnel.js";
 
 export type { ShareProvider, ShareOptions, ShareSession, ShareStatus } from "./types.js";
 
 const providers: ShareProvider[] = [
-  new CloudflareShare(),
+  new LocalTunnelShare(),
 ];
 
 export async function detectShareProvider(preferred?: string): Promise<ShareProvider | null> {

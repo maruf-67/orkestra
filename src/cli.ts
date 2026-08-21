@@ -8,6 +8,7 @@ import { list } from "./commands/list.js";
 import { init } from "./commands/init.js";
 import { open } from "./commands/open.js";
 import { up } from "./commands/up.js";
+import { start } from "./commands/start.js";
 import { down } from "./commands/down.js";
 import { restart } from "./commands/restart.js";
 import { status } from "./commands/status.js";
@@ -71,14 +72,24 @@ export function run() {
     .description("Start dev server")
     .option("-d, --dir <path>", "Project directory")
     .option("-p, --project <name>", "Project name (lookup from state)")
-    .option("--port <port>", "Dev server port", parseInt)
-    .option("-f, --foreground", "Run in foreground (see output directly)")
-    .option("-a, --all", "Start all registered projects")
-    .action(up);
+     .option("--port <port>", "Dev server port", parseInt)
+     .option("-f, --foreground", "Run in foreground (see output directly)")
+     .option("-a, --all", "Start all registered projects")
+     .action(up);
 
-  program
-    .command("down")
-    .description("Stop dev server")
+   program
+     .command("start")
+     .description("Start production server (build + start)")
+     .option("-d, --dir <path>", "Project directory")
+     .option("-p, --project <name>", "Project name (lookup from state)")
+     .option("--port <port>", "Server port", parseInt)
+     .option("-f, --foreground", "Run in foreground (see output directly)")
+     .option("--build", "Run build before starting (default: true)", true)
+     .action(start);
+
+   program
+     .command("down")
+     .description("Stop dev server")
     .option("-d, --dir <path>", "Project directory")
     .option("-p, --project <name>", "Project name (lookup from state)")
     .option("-a, --all", "Stop all running servers")
@@ -155,11 +166,11 @@ export function run() {
 
   program
     .command("share")
-    .description("Share project via Cloudflare tunnel")
+    .description("Share project via tunnel")
     .argument("[project]", "Project name (optional)")
     .option("-d, --dir <path>", "Project directory")
     .option("-p, --project <name>", "Project name (lookup from state)")
-    .option("--provider <provider>", "Share provider (cloudflare)")
+    .option("--provider <provider>", "Share provider (localtunnel)")
     .option("--qr", "Show QR code for mobile scanning")
     .option("--copy", "Copy URL to clipboard")
     .option("--json", "Output as JSON")

@@ -3,6 +3,7 @@ import { log, spinner, heading } from "../utils/logger.js";
 import { getProject, setProjectStopped, isProcessAlive } from "../state/store.js";
 import { isWindows } from "../platform/index.js";
 import { run } from "../utils/exec.js";
+import { cleanupLaravelProcesses } from "../utils/laravel.js";
 
 interface DownOptions {
   dir?: string;
@@ -11,32 +12,56 @@ interface DownOptions {
 }
 
 /**
- * Kill a process and all its children (process tree).
+ * Get all descendant PIDs of a process recursively.
+ */
+async function getDescendants(pid: number): Promise<number[]> {
+  try {
+    const { execSync } = await import("node:child_process");
+    const result = execSync(`ps -o pid --no-headers --ppid ${pid}`, { encoding: "utf-8" });
+    const children = result
+      .split("\n")
+      .map((line) => parseInt(line.trim(), 10))
+      .filter((p) => !isNaN(p));
+
+    const descendants: number[] = [];
+    for (const child of children) {
+      descendants.push(child);
+      const grandchildren = await getDescendants(child);
+      descendants.push(...grandchildren);
+    }
+    return descendants;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Kill a process and all its descendants.
  */
 async function killProcessTree(pid: number): Promise<void> {
   if (isWindows()) {
-    // Windows: Use taskkill to kill process tree
-    // /T = kill process tree, /F = force
     await run("taskkill", ["/F", "/T", "/PID", String(pid)]);
-  } else {
-    // Unix: Send SIGTERM to process group
-    // First try to kill the process group
+    return;
+  }
+
+  const allPids = [pid, ...await getDescendants(pid)];
+
+  for (const p of allPids) {
     try {
-      process.kill(-pid, "SIGTERM");
+      process.kill(p, "SIGTERM");
     } catch {
-      // If process group kill fails, kill individual process
-      process.kill(pid, "SIGTERM");
+      // Process may have already exited
     }
+  }
 
-    // Wait a bit for graceful shutdown
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // If still alive, force kill
-    if (await isProcessAlive(pid)) {
+  for (const p of allPids) {
+    if (await isProcessAlive(p)) {
       try {
-        process.kill(-pid, "SIGKILL");
+        process.kill(p, "SIGKILL");
       } catch {
-        process.kill(pid, "SIGKILL");
+        // Ignore
       }
     }
   }
@@ -60,10 +85,12 @@ export async function down(options: DownOptions) {
     for (const project of running) {
       if (project.pid && await isProcessAlive(project.pid)) {
         await killProcessTree(project.pid);
+        await cleanupLaravelProcesses(project.path, project.port);
         await setProjectStopped(project.path);
         log.success(`Stopped ${project.name} (PID: ${project.pid})`);
         stopped++;
       } else {
+        await cleanupLaravelProcesses(project.path, project.port);
         await setProjectStopped(project.path);
       }
     }
@@ -113,9 +140,27 @@ export async function down(options: DownOptions) {
 
   try {
     await killProcessTree(project.pid);
+    await cleanupLaravelProcesses(projectDir, project.port);
     await setProjectStopped(projectDir);
     spin.succeed(`Stopped ${project.name}`);
   } catch (error) {
     spin.fail(`Failed to stop server: ${error}`);
+  }
+
+  // Fallback: kill anything still listening on the project's port
+  if (project.port) {
+    try {
+      const { execSync } = await import("node:child_process");
+      const result = execSync(`lsof -ti :${project.port}`, { encoding: "utf-8" });
+      const pids = result.split("\n").map((p) => parseInt(p.trim(), 10)).filter((p) => !isNaN(p));
+      if (pids.length > 0) {
+        log.dim(`Force-killing ${pids.length} process(es) still on port ${project.port}`);
+        for (const p of pids) {
+          try { process.kill(p, "SIGKILL"); } catch {}
+        }
+      }
+    } catch {
+      // lsof not available or no processes found
+    }
   }
 }

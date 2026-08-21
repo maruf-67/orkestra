@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-07-25
 
 ### Added
+- Share projects via tunnel using localtunnel
+- QR code generation for mobile sharing
+- Session persistence for active tunnels
+- Auto-install localtunnel when sharing
 - Smart installer with user permission for Caddy/mkcert
 - Windows support (PowerShell, where.exe, UAC elevation)
 - PowerShell shell completions
