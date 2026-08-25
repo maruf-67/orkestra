@@ -1,0 +1,22 @@
+[Unit]
+Description=Orkestra Laravel Reverb WebSocket ({{PROJECT_NAME}})
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{PROJECT_PATH}}
+EnvironmentFile=-{{PROJECT_PATH}}/.env
+
+ExecStart={{PHP_BIN}} artisan reverb:start --host=127.0.0.1 --port={{REVERB_PORT}} --no-interaction
+
+Restart=always
+RestartSec=3s
+KillMode=process
+TimeoutStopSec=10s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
