@@ -1,5 +1,5 @@
 import { resolve, join } from "node:path";
-import { unlink } from "node:fs/promises";
+import { unlink, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { log, spinner, heading } from "../utils/logger.js";
@@ -7,10 +7,10 @@ import { HostsFileProvider } from "../providers/hosts/hosts.js";
 import { getProject, unregisterProject } from "../state/store.js";
 import { detectProxy } from "../detection/proxy.js";
 import { run } from "../utils/exec.js";
+import { isWindows } from "../platform/index.js";
 
 interface RemoveOptions {
   dir?: string;
-  domain?: string;
 }
 
 export async function remove(options: RemoveOptions) {
@@ -20,7 +20,7 @@ export async function remove(options: RemoveOptions) {
 
   const project = await getProject(projectDir);
   if (!project) {
-    log.error("Project not registered. Run `orkestra register` first.");
+    log.error("Project not registered. Run `orkestra init` first.");
     process.exit(1);
   }
 
@@ -52,7 +52,24 @@ export async function remove(options: RemoveOptions) {
   const certsRemoved = await removeCerts(project.domain);
   certSpin.succeed(certsRemoved ? "Certificates removed" : "No certificates to remove");
 
-  // 4. Remove .orkestra.yml from project
+  // 4. Remove log files
+  const logSpin = spinner("Removing logs...");
+  logSpin.start();
+  const logsRemoved = await removeLogs(projectDir, project.name);
+  logSpin.succeed(logsRemoved ? "Logs removed" : "No logs to remove");
+
+  // 5. Remove .orkestra directory
+  const dirSpin = spinner("Removing .orkestra directory...");
+  dirSpin.start();
+  const orkestraDir = join(projectDir, ".orkestra");
+  if (existsSync(orkestraDir)) {
+    await rm(orkestraDir, { recursive: true, force: true });
+    dirSpin.succeed("Removed .orkestra directory");
+  } else {
+    dirSpin.succeed("No .orkestra directory to remove");
+  }
+
+  // 6. Remove .orkestra.yml from project
   const ymlSpin = spinner("Removing config file...");
   ymlSpin.start();
   const configPath = join(projectDir, ".orkestra.yml");
@@ -63,10 +80,24 @@ export async function remove(options: RemoveOptions) {
     ymlSpin.succeed("No config file to remove");
   }
 
-  // 5. Remove from state
+  // 7. Remove from state
   await unregisterProject(projectDir);
 
   log.success("Project removed successfully!");
+}
+
+async function removeLogs(projectDir: string, _projectName: string): Promise<boolean> {
+  const logsDir = join(projectDir, ".orkestra", "logs");
+  if (!existsSync(logsDir)) {
+    return false;
+  }
+
+  try {
+    await rm(logsDir, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function removeCerts(domain: string): Promise<boolean> {
@@ -82,14 +113,26 @@ async function removeCerts(domain: string): Promise<boolean> {
     }
   }
 
-  // Remove from /etc/caddy/certs/ (needs sudo)
-  const caddyCertDir = "/etc/caddy/certs";
+  // Remove from Caddy cert directory
+  const caddyCertDir = isWindows()
+    ? join(homedir(), "AppData", "Roaming", "Caddy", "certs")
+    : "/etc/caddy/certs";
+
   for (const ext of [".pem", "-key.pem"]) {
-    const file = `${caddyCertDir}/${domain}${ext}`;
-    try {
-      await run("sudo", ["rm", "-f", file]);
-      removed = true;
-    } catch {}
+    const file = join(caddyCertDir, `${domain}${ext}`);
+    if (isWindows()) {
+      // Windows: No sudo needed
+      if (existsSync(file)) {
+        await unlink(file);
+        removed = true;
+      }
+    } else {
+      // Unix: Needs sudo
+      try {
+        await run("sudo", ["rm", "-f", file]);
+        removed = true;
+      } catch {}
+    }
   }
 
   return removed;

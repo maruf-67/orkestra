@@ -4,7 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getPlatform } from "../platform/index.js";
+import { getPlatform, isWindows } from "../platform/index.js";
 
 export interface ExecResult {
   stdout: string;
@@ -15,25 +15,57 @@ export interface ExecResult {
 export async function run(
   command: string,
   args: string[] = [],
-  options: { cwd?: string; env?: Record<string, string>; sudo?: boolean } = {}
+  options: { cwd?: string; env?: Record<string, string>; sudo?: boolean; stdin?: string | "inherit" | "pipe" } = {}
 ): Promise<ExecResult> {
   const platform = getPlatform();
+
+  const execaOpts: any = {
+    cwd: options.cwd,
+    env: { ...process.env, ...options.env },
+    reject: false,
+    stdout: "pipe",
+    stderr: "pipe",
+  };
+
+  if (typeof options.stdin === "string") {
+    execaOpts.input = options.stdin;
+  } else {
+    execaOpts.stdin = options.stdin ?? "inherit";
+  }
+
+  // Windows: no sudo, run directly
+  if (isWindows()) {
+    try {
+      const result = await execa(command, args, {
+        ...execaOpts,
+        shell: true,
+      });
+      return {
+        stdout: String(result.stdout ?? ""),
+        stderr: String(result.stderr ?? ""),
+        exitCode: result.exitCode ?? 1,
+      };
+    } catch (error) {
+      return {
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+        exitCode: 1,
+      };
+    }
+  }
+
+  // Unix: use sudo if needed
   const cmd = options.sudo ? "sudo" : command;
   const cmdArgs = options.sudo ? [command, ...args] : args;
 
   try {
     const result = await execa(cmd, cmdArgs, {
-      cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      ...execaOpts,
       shell: platform.shell,
-      reject: false,
-      stdin: "inherit",
-      stdout: "pipe",
-      stderr: "pipe",
     });
     return {
-      stdout: result.stdout,
-      stderr: result.stderr,
+      stdout: String(result.stdout ?? ""),
+      stderr: String(result.stderr ?? ""),
       exitCode: result.exitCode ?? 1,
     };
   } catch (error) {
@@ -46,42 +78,58 @@ export async function run(
 }
 
 /**
- * Write a file with sudo. Uses Node's native spawnSync so the terminal
- * is properly inherited — sudo can prompt for the password directly.
+ * Write a file with elevated privileges.
+ * - Unix: Uses sudo cp
+ * - Windows: Uses PowerShell Start-Process with RunAs
  */
 export async function sudoWriteFile(filePath: string, content: string): Promise<void> {
-  // 1. Write to a temp file (no sudo needed)
+  // 1. Write to a temp file
   const tmpDir = await mkdtemp(join(tmpdir(), "orkestra-"));
   const tmpFile = join(tmpDir, "tmpfile");
   await writeFile(tmpFile, content, "utf-8");
 
-  // 2. Use native spawnSync with stdio: "inherit" — this properly passes
-  //    the terminal to sudo so it can prompt for the password
-  const result = spawnSync("sudo", ["cp", tmpFile, filePath], {
-    stdio: "inherit",
-  });
+  if (isWindows()) {
+    // Windows: Use PowerShell to copy with elevation
+    const psCommand = `Start-Process -FilePath "cmd" -ArgumentList '/c copy "${tmpFile}" "${filePath}"' -Verb RunAs -Wait`;
+    const result = spawnSync("powershell.exe", ["-Command", psCommand], {
+      stdio: "inherit",
+    });
 
-  if (result.status !== 0) {
-    throw new Error(`Failed to write ${filePath}. Do you have sudo access?`);
+    if (result.status !== 0) {
+      throw new Error(`Failed to write ${filePath}. Do you have Administrator access?`);
+    }
+  } else {
+    // Unix: Use sudo cp
+    const result = spawnSync("sudo", ["cp", tmpFile, filePath], {
+      stdio: "inherit",
+    });
+
+    if (result.status !== 0) {
+      throw new Error(`Failed to write ${filePath}. Do you have sudo access?`);
+    }
   }
 }
 
+/**
+ * Check if a command is available.
+ * Uses 'which' on Unix, 'where.exe' on Windows.
+ */
 export async function which(command: string): Promise<string | null> {
-  const platform = getPlatform();
-  const result = await execa("which", [command], {
-    shell: platform.shell,
-    reject: false,
-  });
-  if (result.exitCode === 0) {
-    return result.stdout.trim();
-  }
-  if (platform.shell.includes("powershell")) {
-    const winResult = await execa("where.exe", [command], {
-      shell: platform.shell,
+  if (isWindows()) {
+    const result = await execa("where.exe", [command], {
+      shell: true,
       reject: false,
     });
-    if (winResult.exitCode === 0) {
-      return winResult.stdout.trim().split("\n")[0];
+    if (result.exitCode === 0) {
+      return result.stdout.trim().split("\n")[0];
+    }
+  } else {
+    const result = await execa("which", [command], {
+      shell: true,
+      reject: false,
+    });
+    if (result.exitCode === 0) {
+      return result.stdout.trim();
     }
   }
   return null;

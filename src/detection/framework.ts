@@ -67,13 +67,13 @@ const detectors: FrameworkDetector[] = [
     detect: async (dir) => {
       const pkg = await readJson(dir, "package.json");
       if (!pkg) return false;
-      const allDeps = { ...(pkg.dependencies as object), ...(pkg.devDependencies as object) };
-      return allDeps?.["next"] !== undefined;
+      const allDeps: Record<string, unknown> = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+      return allDeps["next"] !== undefined;
     },
     getVersion: async (dir) => {
       const pkg = await readJson(dir, "package.json");
-      const allDeps = { ...(pkg?.dependencies as object), ...(pkg?.devDependencies as object) };
-      return (allDeps?.["next"] as string) || "unknown";
+      const allDeps: Record<string, unknown> = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
+      return (allDeps["next"] as string) || "unknown";
     },
   },
   {
@@ -98,8 +98,8 @@ const detectors: FrameworkDetector[] = [
     detect: async (dir) => {
       const pkg = await readJson(dir, "package.json");
       if (!pkg) return false;
-      const allDeps = { ...(pkg.dependencies as object), ...(pkg.devDependencies as object) };
-      return allDeps?.["@remix-run/react"] !== undefined || allDeps?.["remix"] !== undefined;
+      const allDeps: Record<string, unknown> = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+      return allDeps["@remix-run/react"] !== undefined || allDeps["remix"] !== undefined;
     },
   },
   {

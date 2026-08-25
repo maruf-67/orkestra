@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { log, heading, table, spinner } from "../utils/logger.js";
 import { run, isCommandAvailable } from "../utils/exec.js";
-import prompts from "prompts";
 
 interface DockerOptions {
   action?: "list" | "up" | "down" | "status";
@@ -85,7 +84,7 @@ export async function docker(options: DockerOptions) {
       return;
     }
 
-    const composePath = await findComposeFile(dir);
+    const composePath = await findComposeFile(projectDir);
     if (!composePath) {
       log.info("No docker-compose file found in this directory.");
       log.dim("Commands:");

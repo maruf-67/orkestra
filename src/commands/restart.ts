@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import { log, spinner, heading } from "../utils/logger.js";
 import { getProject, setProjectStopped, isProcessAlive } from "../state/store.js";
-import { down } from "./down.js";
 import { up } from "./up.js";
 
 interface RestartOptions {

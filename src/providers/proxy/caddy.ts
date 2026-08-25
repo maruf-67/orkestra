@@ -1,15 +1,23 @@
-import { readFile, mkdir, copyFile, chmod } from "node:fs/promises";
+import { readFile, mkdir, copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ProxyProvider, ProxyConfig } from "../types.js";
 import { run, isCommandAvailable, sudoWriteFile } from "../../utils/exec.js";
-import { getPlatform } from "../../platform/index.js";
+import { getPlatform, isWindows } from "../../platform/index.js";
+import { installMkcert } from "../../utils/installer.js";
 
 // mkcert generates certs here
 const MKCERT_CERT_DIR = join(homedir(), ".orkestra", "certs");
-// Caddy (running as caddy user) reads from here
-const CADDY_CERT_DIR = "/etc/caddy/certs";
+
+// Platform-aware cert directory for Caddy
+function getCaddyCertDir(): string {
+  if (isWindows()) {
+    return join(homedir(), "AppData", "Roaming", "Caddy", "certs");
+  }
+  // Linux/macOS: Caddy runs as caddy user, needs certs in /etc/caddy/certs
+  return "/etc/caddy/certs";
+}
 
 export class CaddyProxy implements ProxyProvider {
   readonly name = "caddy";
@@ -40,21 +48,25 @@ export class CaddyProxy implements ProxyProvider {
    * Ensure mkcert is installed and its CA is trusted by the system.
    */
   private async ensureMkcert(): Promise<void> {
-    if (!await isCommandAvailable("mkcert")) {
-      const platform = getPlatform();
-      if (platform.serviceManager === "systemctl") {
-        await run("sh", ["-c", "curl -fsSL https://mkcert.dev/install.sh | sudo sh"]);
-      } else if (platform.serviceManager === "launchctl") {
-        await run("brew", ["install", "mkcert"]);
-      }
+    const result = await installMkcert();
+    if (!result.installed && !result.skipped) {
+      throw new Error(
+        "mkcert is required for SSL certificates.\n" +
+        "Install manually: https://github.com/FiloSottile/mkcert#installation\n" +
+        "Or disable SSL in .orkestra.yml: ssl: false"
+      );
     }
-    // Install the local CA into system trust store (idempotent)
-    await run("mkcert", ["-install"]);
+    if (result.skipped) {
+      throw new Error(
+        "SSL requires mkcert. Disabled for this session.\n" +
+        "To enable later: mkcert -install"
+      );
+    }
   }
 
   /**
    * Generate a certificate for the domain using mkcert,
-   * then copy to /etc/caddy/certs/ so the caddy user can read them.
+   * then copy to Caddy cert directory.
    */
   private async generateCert(domain: string): Promise<{ cert: string; key: string }> {
     await this.ensureMkcert();
@@ -71,13 +83,27 @@ export class CaddyProxy implements ProxyProvider {
       await run("mkcert", ["-cert-file", localCert, "-key-file", localKey, domain]);
     }
 
-    // Copy to /etc/caddy/certs/ (needs sudo) so caddy user can read them
-    if (!existsSync(CADDY_CERT_DIR)) {
-      await run("sudo", ["mkdir", "-p", CADDY_CERT_DIR]);
+    const caddyCertDir = getCaddyCertDir();
+
+    if (isWindows()) {
+      // Windows: Copy to user's Caddy cert dir (no sudo needed)
+      if (!existsSync(caddyCertDir)) {
+        await mkdir(caddyCertDir, { recursive: true });
+      }
+      const caddyCert = join(caddyCertDir, `${domain}.pem`);
+      const caddyKey = join(caddyCertDir, `${domain}-key.pem`);
+      await copyFile(localCert, caddyCert);
+      await copyFile(localKey, caddyKey);
+      return { cert: caddyCert, key: caddyKey };
     }
 
-    const caddyCert = join(CADDY_CERT_DIR, `${domain}.pem`);
-    const caddyKey = join(CADDY_CERT_DIR, `${domain}-key.pem`);
+    // Linux/macOS: Copy to /etc/caddy/certs/ (needs sudo)
+    if (!existsSync(caddyCertDir)) {
+      await run("sudo", ["mkdir", "-p", caddyCertDir]);
+    }
+
+    const caddyCert = join(caddyCertDir, `${domain}.pem`);
+    const caddyKey = join(caddyCertDir, `${domain}-key.pem`);
 
     await run("sudo", ["cp", localCert, caddyCert]);
     await run("sudo", ["cp", localKey, caddyKey]);
@@ -136,6 +162,6 @@ export class CaddyProxy implements ProxyProvider {
   async reload(): Promise<void> {
     const platform = getPlatform();
     const [cmd, ...args] = platform.caddyReloadCmd;
-    await run(cmd, args, { sudo: true });
+    await run(cmd, args, { sudo: !isWindows() });
   }
 }

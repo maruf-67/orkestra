@@ -43,9 +43,38 @@ export function heading(msg: string) {
   console.log(pc.dim("─".repeat(msg.length)));
 }
 
-export function table(rows: [string, string][]) {
-  const maxKey = Math.max(...rows.map(([k]) => k.length));
-  for (const [key, value] of rows) {
-    console.log(`  ${pc.dim(key.padEnd(maxKey + 2))}${value}`);
+export function table(rows: (string | string[])[]) {
+  if (rows.length === 0) return;
+  
+  // Check if first row is header (array)
+  const firstRow = rows[0];
+  if (Array.isArray(firstRow)) {
+    // Multi-column table
+    const numCols = firstRow.length;
+    const colWidths: number[] = new Array(numCols).fill(0);
+    
+    // Calculate column widths
+    for (const row of rows) {
+      if (Array.isArray(row)) {
+        for (let i = 0; i < numCols; i++) {
+          colWidths[i] = Math.max(colWidths[i], (row[i] || "").length);
+        }
+      }
+    }
+    
+    // Print rows
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      if (Array.isArray(row)) {
+        const parts = row.map((cell, i) => cell.padEnd(colWidths[i] + 2));
+        console.log(`  ${parts.join("")}`);
+      }
+    }
+  } else {
+    // Simple key-value table (backward compatible)
+    const maxKey = Math.max(...rows.map(([k]) => k.length));
+    for (const [key, value] of rows) {
+      console.log(`  ${pc.dim(key.padEnd(maxKey + 2))}${value}`);
+    }
   }
 }

@@ -1,5 +1,5 @@
 import type { ServiceProvider } from "../types.js";
-import { run, isCommandAvailable } from "../../utils/exec.js";
+import { run } from "../../utils/exec.js";
 import { getPlatform, isWindows } from "../../platform/index.js";
 
 export class OsServiceProvider implements ServiceProvider {

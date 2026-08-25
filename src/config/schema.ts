@@ -8,6 +8,18 @@ export const orkestraConfigSchema = z.object({
   port: z.number().int().min(1024).max(65535).optional(),
   domain: z.string().optional(),
   ssl: z.boolean().default(true),
+  startCommand: z.string().optional(),
+  /**
+   * The TCP port Reverb/WebSocket server binds to locally (e.g. 8080, 8081).
+   * Each project must use a unique port to avoid conflicts.
+   */
+  reverbPort: z.number().int().min(1024).max(65535).optional(),
+  /**
+   * The public-facing domain for this project's Reverb server.
+   * Proxied by Caddy: reverbDomain:443 -> localhost:reverbPort.
+   * Example: texel-reverb.dev.com
+   */
+  reverbDomain: z.string().optional(),
 });
 
 export type OrkestraConfig = z.infer<typeof orkestraConfigSchema>;

@@ -1,5 +1,5 @@
 import type { RuntimeProvider, RuntimeInfo } from "../types.js";
-import { run, isCommandAvailable } from "../../utils/exec.js";
+import { run, isCommandAvailable, which } from "../../utils/exec.js";
 
 export class VoltaRuntime implements RuntimeProvider {
   readonly name = "volta";
@@ -15,11 +15,11 @@ export class VoltaRuntime implements RuntimeProvider {
 
     const versionMatch = result.stdout.match(/v(\d+\.\d+\.\d+)/);
     const version = versionMatch ? versionMatch[1] : "unknown";
-    const pathResult = await run("which", ["node"]);
+    const path = await which("node");
     return {
       name: "node",
       version,
-      path: pathResult.stdout.trim(),
+      path: path || "",
     };
   }
 

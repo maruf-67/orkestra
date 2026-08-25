@@ -1,0 +1,130 @@
+{
+  "sessionId": "7e895f29-ef6a-4837-b7cf-516b405b1bb5",
+  "login": "almaruf67",
+  "startTime": "2026-08-13T08:13:32.131Z",
+  "endTime": null,
+  "duration": null,
+  "entries": [
+    {
+      "timestamp": "2026-08-13T08:16:41.786Z",
+      "skill": "list-skills",
+      "skillCategory": "meta",
+      "agent": "system",
+      "agentRole": "System",
+      "action": "skill_invoked",
+      "duration": 0,
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-08-13T08:16:41.788Z",
+      "agent": "doc-browser",
+      "agentRole": "Knowledge Access",
+      "action": "list_docs",
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-08-13T08:16:48.040Z",
+      "skill": "read-file",
+      "skillCategory": "meta",
+      "agent": "system",
+      "agentRole": "System",
+      "action": "skill_invoked",
+      "duration": 1,
+      "status": "success",
+      "metadata": {
+        "cached": false
+      }
+    },
+    {
+      "timestamp": "2026-08-13T08:16:48.285Z",
+      "skill": "read-file",
+      "skillCategory": "meta",
+      "agent": "system",
+      "agentRole": "System",
+      "action": "skill_invoked",
+      "duration": 1,
+      "status": "success",
+      "metadata": {
+        "cached": false
+      }
+    },
+    {
+      "timestamp": "2026-08-13T08:16:48.690Z",
+      "skill": "read-file",
+      "skillCategory": "meta",
+      "agent": "system",
+      "agentRole": "System",
+      "action": "skill_invoked",
+      "duration": 2,
+      "status": "success",
+      "metadata": {
+        "cached": false
+      }
+    },
+    {
+      "timestamp": "2026-08-13T08:16:56.476Z",
+      "skill": "read-file",
+      "skillCategory": "meta",
+      "agent": "system",
+      "agentRole": "System",
+      "action": "skill_invoked",
+      "duration": 0,
+      "status": "success",
+      "metadata": {
+        "cached": false
+      }
+    },
+    {
+      "timestamp": "2026-08-13T08:16:57.476Z",
+      "skill": "read-file",
+      "skillCategory": "meta",
+      "agent": "system",
+      "agentRole": "System",
+      "action": "skill_invoked",
+      "duration": 2,
+      "status": "success",
+      "metadata": {
+        "cached": false
+      }
+    }
+  ],
+  "skills": {
+    "meta/list-skills": {
+      "name": "list-skills",
+      "category": "meta",
+      "invocations": 1,
+      "firstUsed": "2026-08-13T08:16:41.786Z",
+      "lastUsed": "2026-08-13T08:16:41.786Z",
+      "totalExecutionMs": 0
+    },
+    "meta/read-file": {
+      "name": "read-file",
+      "category": "meta",
+      "invocations": 5,
+      "firstUsed": "2026-08-13T08:16:48.040Z",
+      "lastUsed": "2026-08-13T08:16:57.476Z",
+      "totalExecutionMs": 6
+    }
+  },
+  "agents": {
+    "system": {
+      "name": "system",
+      "role": "System",
+      "invocations": 6,
+      "skillsInvoked": [
+        "meta/list-skills",
+        "meta/read-file"
+      ],
+      "firstUsed": "2026-08-13T08:16:41.786Z",
+      "lastUsed": "2026-08-13T08:16:57.476Z"
+    },
+    "doc-browser": {
+      "name": "doc-browser",
+      "role": "Knowledge Access",
+      "invocations": 1,
+      "skillsInvoked": [],
+      "firstUsed": "2026-08-13T08:16:41.788Z",
+      "lastUsed": "2026-08-13T08:16:41.788Z"
+    }
+  }
+}

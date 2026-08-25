@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { doctor } from "./commands/doctor.js";
-import { register } from "./commands/register.js";
 import { remove } from "./commands/remove.js";
 import { list } from "./commands/list.js";
 import { init } from "./commands/init.js";
 import { open } from "./commands/open.js";
 import { up } from "./commands/up.js";
+import { start } from "./commands/start.js";
 import { down } from "./commands/down.js";
 import { restart } from "./commands/restart.js";
 import { status } from "./commands/status.js";
@@ -16,6 +16,10 @@ import { logs } from "./commands/logs.js";
 import { db } from "./commands/db.js";
 import { env } from "./commands/env.js";
 import { docker } from "./commands/docker.js";
+import { shell } from "./commands/shell.js";
+import { completions } from "./commands/completions.js";
+import { check } from "./commands/check.js";
+import { share } from "./commands/share.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -36,23 +40,25 @@ export function run() {
     .action(doctor);
 
   program
-    .command("init")
-    .description("Initialize a project with .orkestra.yml config")
+    .command("check")
+    .description("Validate configuration and check for issues")
     .option("-d, --dir <path>", "Project directory")
-    .action(init);
+    .option("--fix", "Attempt to fix issues automatically")
+    .action(check);
 
   program
-    .command("register")
-    .description("Register project with proxy and hosts")
+    .command("init")
+    .description("Initialize and register project with proxy, hosts, and SSL")
     .option("-d, --dir <path>", "Project directory")
     .option("--domain <domain>", "Domain name")
     .option("--port <port>", "Dev server port", parseInt)
     .option("--proxy <proxy>", "Proxy provider (caddy, apache, nginx)")
-    .action(register);
+    .option("-y, --yes", "Skip prompts, use defaults (for CI/CD)")
+    .action(init);
 
   program
     .command("remove")
-    .description("Remove project from proxy, hosts, certs, and config")
+    .description("Remove project from proxy, hosts, certs, logs, and config")
     .option("-d, --dir <path>", "Project directory")
     .action(remove);
 
@@ -65,13 +71,27 @@ export function run() {
     .command("up")
     .description("Start dev server")
     .option("-d, --dir <path>", "Project directory")
-    .option("--port <port>", "Dev server port", parseInt)
-    .action(up);
+    .option("-p, --project <name>", "Project name (lookup from state)")
+     .option("--port <port>", "Dev server port", parseInt)
+     .option("-f, --foreground", "Run in foreground (see output directly)")
+     .option("-a, --all", "Start all registered projects")
+     .action(up);
 
-  program
-    .command("down")
-    .description("Stop dev server")
+   program
+     .command("start")
+     .description("Start production server (build + start)")
+     .option("-d, --dir <path>", "Project directory")
+     .option("-p, --project <name>", "Project name (lookup from state)")
+     .option("--port <port>", "Server port", parseInt)
+     .option("-f, --foreground", "Run in foreground (see output directly)")
+     .option("--build", "Run build before starting (default: true)", true)
+     .action(start);
+
+   program
+     .command("down")
+     .description("Stop dev server")
     .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
     .option("-a, --all", "Stop all running servers")
     .action(down);
 
@@ -84,18 +104,29 @@ export function run() {
   program
     .command("status")
     .description("Show project status")
+    .option("-p, --project <name>", "Project name (lookup from state)")
+    .option("--json", "Output as JSON")
+    .option("-v, --verbose", "Show detailed information")
+    .option("-w, --watch", "Auto-refresh every 2 seconds")
     .action(status);
 
   program
     .command("logs")
     .description("View dev server logs")
     .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
+    .option("-f, --follow", "Follow logs in real-time")
+    .option("--since <time>", "Show logs since (e.g., 5m, 1h, 2d, 2024-01-01)")
+    .option("--stream <stream>", "Filter by stream (stdout, stderr)")
+    .option("-n, --limit <number>", "Number of recent log entries to show", parseInt)
+    .option("-l, --list", "List available log files")
     .action(logs);
 
   program
     .command("open")
     .description("Open project in browser")
     .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
     .action(open);
 
   program
@@ -120,6 +151,39 @@ export function run() {
     .option("-a, --action <action>", "Action: list, up, down, status")
     .option("-d, --dir <path>", "Project directory")
     .action(docker);
+
+  program
+    .command("shell")
+    .description("Open shell with project environment variables")
+    .option("-d, --dir <path>", "Project directory")
+    .action(shell);
+
+  program
+    .command("completions")
+    .description("Generate shell completion scripts")
+    .option("--shell <shell>", "Shell type (zsh, bash, fish)")
+    .action(completions);
+
+  program
+    .command("share")
+    .description("Share project via tunnel")
+    .argument("[project]", "Project name (optional)")
+    .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
+    .option("--provider <provider>", "Share provider (localtunnel)")
+    .option("--qr", "Show QR code for mobile scanning")
+    .option("--copy", "Copy URL to clipboard")
+    .option("--json", "Output as JSON")
+    .option("--stop", "Stop sharing")
+    .option("--status", "Show share status")
+    .option("--url", "Show and copy tunnel URL")
+    .action((projectName, options) => {
+      // Handle positional argument as project name
+      if (projectName && !options.project) {
+        options.project = projectName;
+      }
+      share(options);
+    });
 
   program.parse();
 }

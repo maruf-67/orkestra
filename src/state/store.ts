@@ -106,6 +106,21 @@ export async function setProjectStopped(projectPath: string): Promise<void> {
   }
 }
 
+export async function updateProjectPort(projectPath: string, newPort: number): Promise<void> {
+  const state = await loadState();
+  const project = state.projects[projectPath];
+  if (project) {
+    // Remove old port from allocated ports
+    state.allocatedPorts = state.allocatedPorts.filter((p) => p !== project.port);
+    // Add new port
+    if (!state.allocatedPorts.includes(newPort)) {
+      state.allocatedPorts.push(newPort);
+    }
+    project.port = newPort;
+    await saveState(state);
+  }
+}
+
 export async function isProcessAlive(pid: number): Promise<boolean> {
   try {
     process.kill(pid, 0);

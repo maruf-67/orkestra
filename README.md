@@ -2,267 +2,149 @@
 
 **A cross-platform development workspace manager.**
 
-Orkestra orchestrates your local development environment — reverse proxy, hosts file, SSL certificates, runtime detection, process management, and project registration — into a single CLI.
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/maruf-67/orkestra)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)]()
 
----
-
-## Installation
-
-```bash
-npm install -g orkestra
-# or
-pnpm install -g orkestra
-```
-
-### Verify
-
-```bash
-orkestra --version
-orkestra doctor
-```
-
----
+Orkestra orchestrates your local development environment — reverse proxy, hosts file, SSL certificates, runtime detection, process management, logging, and health monitoring — into a single CLI.
 
 ## Quick Start
 
 ```bash
+# Install
+npm install -g orkestra
+
+# Initialize project
 cd ~/projects/my-app
-orkestra up           # register + start server
-orkestra open         # open in browser
-orkestra down         # stop server
-orkestra remove       # clean everything
+orkestra init
+
+# Start server
+orkestra up
+
+# Check status
+orkestra status
+
+# View logs
+orkestra logs
+
+# Stop server
+orkestra down
 ```
 
----
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Auto-detection** | Framework, package manager, port detection |
+| **Smart installer** | Offers to install Caddy/mkcert with permission |
+| **Process management** | Start, stop, restart dev servers |
+| **Log capture** | Capture and view server logs |
+| **Health monitoring** | Auto-restart on crash |
+| **Cross-platform** | Linux, macOS, Windows |
+| **Shell completions** | ZSH, Bash, Fish, PowerShell |
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `orkestra doctor` | Check system capabilities |
-| `orkestra init` | Create `.orkestra.yml` config |
-| `orkestra register` | Register project with proxy and hosts |
+| `orkestra init` | Initialize and register project |
 | `orkestra up` | Start dev server |
 | `orkestra down` | Stop dev server |
-| `orkestra restart` | Restart dev server |
-| `orkestra status` | Show all projects and their state |
-| `orkestra open` | Open project in browser |
-| `orkestra list` | List all registered projects |
-| `orkestra remove` | Remove project and clean up everything |
-| `orkestra logs` | View dev server logs |
-| `orkestra db` | Database management |
-| `orkestra env` | Environment variable management |
-| `orkestra docker` | Docker compose management |
-
----
-
-## Detailed Usage
-
-### `orkestra up`
-
-Starts your dev server. Auto-detects framework and command.
-
-```bash
-orkestra up
-orkestra up --port 3000
-```
-
-### `orkestra down`
-
-```bash
-orkestra down          # stop current project
-orkestra down --all    # stop all running servers
-```
-
-### `orkestra status`
-
-```
-Project Status
-──────────────
-
-  ● my-app
-  Status     running
-  Domain     my-app.dev.com
-  Port       3000
-  Framework  nuxt
-  Proxy      caddy
-  URL        https://my-app.dev.com
-
-  ○ api-service
-  Status     stopped
-  Domain     api.dev.com
-  Port       8080
-  Framework  go
-```
-
-### `orkestra db`
-
-```bash
-orkestra db                    # show database status
-orkestra db create mydb        # create database
-orkestra db drop mydb          # drop database
-orkestra db list               # list detected databases
-```
-
-### `orkestra env`
-
-```bash
-orkestra env                          # list all env vars
-orkestra env --get DATABASE_URL       # get a variable
-orkestra env --set PORT=3000          # set a variable
-```
-
-Sensitive values (passwords, tokens) are auto-masked in output.
-
-### `orkestra docker`
-
-```bash
-orkestra docker              # show docker services
-orkestra docker up           # start all services
-orkestra docker down         # stop all services
-orkestra docker status       # show running containers
-```
-
----
-
-## Supported Frameworks
-
-| Language | Framework | Default Port |
-|----------|-----------|--------------|
-| PHP | Laravel, Symfony | 8000 |
-| JavaScript | Next.js, Nuxt, Remix, Astro, SvelteKit, Vite, Express, Fastify | 3000-5173 |
-| Python | FastAPI, Flask, Django | 5000-8000 |
-| Go | Go | 8080 |
-| Rust | Rust | 8080 |
-
----
-
-## Supported Proxies
-
-| Proxy | Priority | SSL |
-|-------|----------|-----|
-| Caddy | 100 | mkcert (trusted) |
-| Traefik | 90 | ACME/Let's Encrypt |
-| Nginx | 80 | snakeoil cert |
-| Apache | 60 | snakeoil cert |
-
-```bash
-orkestra register --proxy nginx
-```
-
----
-
-## Supported Runtimes
-
-| Runtime | Priority |
-|---------|----------|
-| mise | 100 |
-| nvm | 80 |
-| fnm | 70 |
-| asdf | 60 |
-| volta | 50 |
-| system | 10 |
-
----
-
-## SSL Certificates
-
-Orkestra uses **mkcert** for locally-trusted SSL:
-
-1. Installs a local Certificate Authority
-2. Adds CA to system trust store
-3. Generates certificates per domain
-4. Browsers trust them — no warnings
-
----
-
-## Configuration
-
-### `.orkestra.yml`
-
-```yaml
-name: my-app
-framework: nuxt
-proxy: auto          # auto | caddy | nginx | apache | traefik
-runtime: auto        # auto | mise | nvm | fnm | asdf | volta | system
-port: 3000
-domain: my-app.dev.com
-ssl: true
-```
-
-### State
-
-Stored in `~/.orkestra/state.json`:
-
-```json
-{
-  "projects": {
-    "/home/user/projects/my-app": {
-      "name": "my-app",
-      "domain": "my-app.dev.com",
-      "port": 3000,
-      "framework": "nuxt",
-      "proxy": "caddy",
-      "pid": 12345
-    }
-  }
-}
-```
-
----
+| `orkestra status` | Show project status |
+| `orkestra logs` | View server logs |
+| `orkestra shell` | Open shell with env vars |
+| `orkestra remove` | Remove project completely |
+| `orkestra doctor` | Check system capabilities |
+| `orkestra completions` | Generate shell completions |
+| `orkestra share` | Share project via tunnel |
 
 ## Platform Support
 
-| Platform | Hosts File | Proxies |
-|----------|-----------|---------|
-| Linux | `/etc/hosts` | Caddy, Nginx, Apache, Traefik |
-| macOS | `/etc/hosts` | Caddy, Nginx, Apache, Traefik |
-| Windows | `C:\Windows\System32\drivers\etc\hosts` | Caddy |
+| Platform | Proxy | SSL | Completions |
+|----------|-------|-----|-------------|
+| Linux | Caddy/Apache/Nginx | mkcert | bash/zsh/fish |
+| macOS | Caddy/Apache/Nginx | mkcert | bash/zsh/fish |
+| Windows | Caddy | mkcert | PowerShell |
 
----
+## Smart Installer
 
-## Plugin SDK
+When tools are missing, Orkestra offers to install them:
 
-Create custom providers:
+```bash
+$ orkestra init
 
-```js
-// ~/.orkestra/plugins/my-proxy/index.js
-module.exports = {
-  proxy: {
-    name: "my-proxy",
-    priority: 50,
-    detect: async () => true,
-    register: async (config) => { /* ... */ },
-    unregister: async (domain) => { /* ... */ },
-    reload: async () => { /* ... */ }
-  }
-}
+⚠ No proxy detected
+? Caddy is not installed. Install it now? (Y/n) Y
+✓ Caddy installed successfully
+✓ Project registered successfully!
 ```
 
----
+## Documentation
 
-## Troubleshooting
+- **[Getting Started](docs/getting-started.md)** — Installation and first steps
+- **[User Guide](docs/user-guide.md)** — Complete command reference
+- **[Configuration](docs/configuration.md)** — `.orkestra.yml` reference
+- **[Installation](docs/installation.md)** — Platform-specific setup
+- **[Troubleshooting](docs/troubleshooting.md)** — Common issues and solutions
+- **[Architecture](docs/architecture.md)** — System design (for developers)
 
-**Permission denied on hosts file** — Orkestra needs sudo. You'll be prompted.
+## Examples
 
-**Host not allowed** — Add to `server.allowedHosts` in vite.config or nuxt.config.
+### Next.js Project
 
-**SSL not trusted** — Run `mkcert -install`.
+```bash
+cd ~/projects/my-next-app
+orkestra init --port 3000
+orkestra up
+# Open https://my-next-app.dev.com
+```
 
-**Port in use** — Orkestra auto-finds next available port, or specify `--port`.
+### Laravel Project
 
----
+```bash
+cd ~/projects/my-laravel-app
+orkestra init --port 8000
+orkestra up
+# Open https://my-laravel-app.dev.com
+```
+
+### Multiple Projects
+
+```bash
+# Start all projects
+orkestra up --all
+
+# Check all status
+orkestra status
+
+# Stop all
+orkestra down --all
+```
+
+## Configuration
+
+```yaml
+# .orkestra.yml
+name: my-app
+port: 3000
+domain: my-app.dev.com
+ssl: true
+proxy: auto
+startCommand: "pnpm dev"
+```
+
+## Requirements
+
+- **Node.js** 22+
+- **Caddy** (auto-installed if missing)
+- **mkcert** (auto-installed if missing)
+- **localtunnel** (auto-installed if sharing)
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests: `pnpm test`
-5. Submit a pull request
-
----
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 
-MIT
+MIT © [maruf-67](https://github.com/maruf-67)

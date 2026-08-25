@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { log, spinner, heading } from "../utils/logger.js";
+import { log, heading } from "../utils/logger.js";
 import { getProject } from "../state/store.js";
 import { run } from "../utils/exec.js";
 import { isWindows } from "../platform/index.js";
