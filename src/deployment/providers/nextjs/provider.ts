@@ -15,11 +15,16 @@ export class NextjsProvider implements ApplicationProvider {
   readonly name = "nextjs";
   readonly framework = "next.js";
 
-  private detectPackageManager(dir: string): "pnpm" | "bun" | "yarn" | "npm" {
-    if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm";
+  private detectPackageManager(dir: string, explicitPm?: string): "bun" | "pnpm" | "npm" | "yarn" {
+    if (explicitPm && explicitPm !== "auto") {
+      return explicitPm as "bun" | "pnpm" | "npm" | "yarn";
+    }
+    // Top Priority: Bun, then pnpm, then npm, then yarn
     if (existsSync(join(dir, "bun.lock")) || existsSync(join(dir, "bun.lockb"))) return "bun";
+    if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm";
+    if (existsSync(join(dir, "package-lock.json"))) return "npm";
     if (existsSync(join(dir, "yarn.lock"))) return "yarn";
-    return "npm";
+    return "bun";
   }
 
   async detect(dir: string): Promise<ApplicationDetection | null> {
@@ -61,15 +66,16 @@ export class NextjsProvider implements ApplicationProvider {
 
   async installDependencies(context: DeploymentContext): Promise<{ durationMs: number; output: string }> {
     const start = Date.now();
-    const pm = this.detectPackageManager(context.projectDir);
+    const explicitPm = context.config?.deployment?.packageManager || context.config?.packageManager;
+    const pm = this.detectPackageManager(context.projectDir, explicitPm);
     let cmd = context.binaries[pm] || pm;
     let args: string[] = [];
 
     switch (pm) {
-      case "pnpm":
+      case "bun":
         args = ["install", "--frozen-lockfile"];
         break;
-      case "bun":
+      case "pnpm":
         args = ["install", "--frozen-lockfile"];
         break;
       case "yarn":
@@ -99,7 +105,8 @@ export class NextjsProvider implements ApplicationProvider {
 
   async build(context: DeploymentContext): Promise<{ durationMs: number; output: string }> {
     const start = Date.now();
-    const pm = this.detectPackageManager(context.projectDir);
+    const explicitPm = context.config?.deployment?.packageManager || context.config?.packageManager;
+    const pm = this.detectPackageManager(context.projectDir, explicitPm);
     const cmd = context.binaries[pm] || pm;
 
     const res = await run(cmd, ["run", "build"], {
@@ -125,10 +132,11 @@ export class NextjsProvider implements ApplicationProvider {
       context.config?.port ||
       3000;
 
-    const pm = this.detectPackageManager(context.projectDir);
+    const explicitPm = context.config?.deployment?.packageManager || context.config?.packageManager;
+    const pm = this.detectPackageManager(context.projectDir, explicitPm);
     let execStart = "";
 
-    if (pm === "bun") {
+    if (pm === "bun" || context.binaries.bun) {
       execStart = `${context.binaries.bun} run start --port ${port}`;
     } else {
       execStart = `${context.binaries.node} ${join(context.projectDir, "node_modules", "next", "dist", "bin", "next")} start --hostname 127.0.0.1 --port ${port}`;
