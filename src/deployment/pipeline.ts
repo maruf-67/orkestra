@@ -2,19 +2,17 @@ import { resolve, basename, join } from "node:path";
 import { writeFile, unlink, readFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { loadConfig } from "../config/loader.js";
-import { detectCapabilities } from "./detector.js";
+import { providerRegistry } from "./providers/registry.js";
+import { resolveBinaries } from "../services/mise-resolver.js";
 import { syncGitBranch, getCurrentGitInfo } from "./git.js";
-import { installComposerDependencies } from "./composer.js";
-import { runLaravelMigrations, ensureStorageLink, optimizeLaravel } from "./laravel.js";
-import { servicesManager } from "../services/manager.js";
+import { systemd } from "../services/systemd.js";
 import { CaddyProxy } from "../providers/proxy/caddy.js";
 import { performDeploymentHealthChecks } from "./health.js";
 import { saveDeploymentReport } from "./history.js";
 import type { DeploymentOptions, DeploymentReport, DeploymentStep } from "./types.js";
+import type { DeploymentContext } from "./providers/types.js";
 import { log, spinner } from "../utils/logger.js";
-import { findAvailablePort } from "../state/ports.js";
 import { registerProject, getProject } from "../state/store.js";
-import { getPlatform } from "../platform/index.js";
 
 function getLockFilePath(projectDir: string): string {
   return join(projectDir, ".orkestra", "deploy.lock");
@@ -65,7 +63,8 @@ export class DeploymentPipeline {
     };
 
     const initialGit = await getCurrentGitInfo(projectDir);
-    const capabilities = await detectCapabilities(projectDir);
+    const binaries = await resolveBinaries(projectDir);
+    const resolved = await providerRegistry.resolve(projectDir);
 
     const report: DeploymentReport = {
       projectName,
@@ -77,25 +76,50 @@ export class DeploymentPipeline {
       durationSeconds: 0,
       status: "success",
       steps,
-      capabilities,
+      capabilities: {
+        isLaravel: resolved?.detection.framework === "laravel",
+        laravelVersion: resolved?.detection.framework === "laravel" ? resolved.detection.version : undefined,
+        hasOctane: Boolean(resolved?.detection.capabilities.hasOctane),
+        octaneServer: resolved?.detection.capabilities.octaneServer || "none",
+        hasReverb: Boolean(resolved?.detection.capabilities.hasReverb),
+        hasQueue: Boolean(resolved?.detection.capabilities.hasQueue),
+        queueConnection: "redis",
+        hasCaddy: true,
+        hasMise: binaries.isMise,
+        phpBinary: binaries.php,
+        composerBinary: binaries.composer,
+      },
       services: {},
       proxy: { status: "skipped" },
       health: {},
     };
 
+    const context: DeploymentContext = {
+      projectDir,
+      projectName,
+      branch: targetBranch,
+      config,
+      binaries,
+      options,
+    };
+
     // Dry Run Mode
     if (options.dryRun) {
       log.info(`[Dry Run] Deployment preview for ${projectName} (Branch: ${targetBranch})`);
-      log.plain(`  • Framework:   ${capabilities.isLaravel ? `Laravel (${capabilities.laravelVersion || "detected"})` : "Non-Laravel"}`);
-      log.plain(`  • Octane:      ${capabilities.hasOctane ? `Enabled (${capabilities.octaneServer})` : "Disabled"}`);
-      log.plain(`  • Queue:       ${capabilities.hasQueue ? `Enabled (${capabilities.queueConnection})` : "Disabled"}`);
-      log.plain(`  • Reverb:      ${capabilities.hasReverb ? "Enabled" : "Disabled"}`);
-      log.plain(`  • PHP Runtime: ${capabilities.phpBinary || "php"}`);
-      log.plain(`  • Strategy:    git ${strategy} origin/${targetBranch}`);
-      log.plain(`  • Migrations:  ${config?.deployment?.database?.migrate !== false && !options.noMigrate ? "Yes" : "No"}`);
-      log.plain(`  • Services:    Systemd templates will be applied and restarted`);
+      log.plain(`  • Framework:       ${resolved?.detection.framework || "generic"} (${resolved?.detection.version || "unknown"})`);
+      log.plain(`  • Package Manager: ${resolved?.detection.packageManager || "npm"}`);
+      log.plain(`  • Runtime:         ${resolved?.detection.runtime || "node"} (${binaries.isMise ? "Mise managed" : "system"})`);
+      log.plain(`  • Strategy:        git ${strategy} origin/${targetBranch}`);
+      log.plain(`  • Build:           ${resolved?.detection.buildCommand || "none"}`);
+      log.plain(`  • Start:           ${resolved?.detection.startCommand || "none"}`);
       return report;
     }
+
+    if (!resolved) {
+      throw new Error(`Could not determine application framework provider for ${projectDir}`);
+    }
+
+    const { provider, detection } = resolved;
 
     // Step 1: Acquire Lock
     const lockSpin = spinner("Acquiring deployment lock...");
@@ -129,118 +153,73 @@ export class DeploymentPipeline {
         throw err;
       }
 
-      // Step 3: Dependencies (Composer)
-      const compSpin = spinner("Installing Composer dependencies...");
-      compSpin.start();
-      const compStepStart = Date.now();
+      // Step 3: Install Dependencies
+      const depSpin = spinner(`Installing dependencies (${detection.packageManager})...`);
+      depSpin.start();
       try {
-        const composerFlags =
-          typeof config?.deployment?.composer === "object"
-            ? config.deployment.composer.flags
-            : undefined;
-
-        await installComposerDependencies({
-          composerBinary: capabilities.composerBinary,
-          flags: composerFlags,
-          cwd: projectDir,
-        });
-        const duration = Date.now() - compStepStart;
-        compSpin.succeed(`Composer dependencies installed in ${(duration / 1000).toFixed(1)}s`);
-        recordStep("composer", "Installed composer dependencies", "success", duration);
+        const depRes = await provider.installDependencies(context);
+        depSpin.succeed(`Dependencies installed in ${(depRes.durationMs / 1000).toFixed(1)}s`);
+        recordStep("dependencies", `Installed dependencies with ${detection.packageManager}`, "success", depRes.durationMs);
       } catch (err: any) {
-        compSpin.fail(`Composer install failed: ${err.message}`);
-        recordStep("composer", "Composer install failed", "failed", Date.now() - compStepStart, err.message);
+        depSpin.fail(`Dependencies installation failed: ${err.message}`);
+        recordStep("dependencies", "Dependency installation failed", "failed", undefined, err.message);
         throw err;
       }
 
-      // Step 4: Laravel Migrations & Optimization
-      if (capabilities.isLaravel) {
-        const shouldMigrate = config?.deployment?.database?.migrate !== false && !options.noMigrate;
-        if (shouldMigrate) {
-          const migSpin = spinner("Running database migrations...");
-          migSpin.start();
-          const migStepStart = Date.now();
-          try {
-            await runLaravelMigrations({
-              phpBinary: capabilities.phpBinary,
-              cwd: projectDir,
-              seed: config?.deployment?.database?.seed,
-            });
-            const duration = Date.now() - migStepStart;
-            migSpin.succeed(`Database migrations executed in ${(duration / 1000).toFixed(1)}s`);
-            recordStep("migrations", "Executed migrations", "success", duration);
-          } catch (err: any) {
-            migSpin.fail(`Database migration failed: ${err.message}`);
-            recordStep("migrations", "Migrations failed", "failed", Date.now() - migStepStart, err.message);
-            throw err;
-          }
-        } else {
-          recordStep("migrations", "Skipped migrations", "skipped");
-        }
-
-        // Storage link
-        await ensureStorageLink({ phpBinary: capabilities.phpBinary, cwd: projectDir });
-
-        // Optimization
-        if (config?.deployment?.optimize !== false) {
-          const optSpin = spinner("Optimizing Laravel caches...");
-          optSpin.start();
-          const optStepStart = Date.now();
-          try {
-            await optimizeLaravel({ phpBinary: capabilities.phpBinary, cwd: projectDir });
-            const duration = Date.now() - optStepStart;
-            optSpin.succeed(`Laravel optimized in ${(duration / 1000).toFixed(1)}s`);
-            recordStep("optimize", "Optimized Laravel configuration & route caches", "success", duration);
-          } catch (err: any) {
-            optSpin.warn(`Optimization completed with warnings: ${err.message}`);
-            recordStep("optimize", "Optimization warning", "success", Date.now() - optStepStart);
-          }
-        }
+      // Step 4: Prepare Phase (Migrations, storage links, etc.)
+      try {
+        await provider.prepare(context);
+        recordStep("prepare", "Application preparation completed", "success");
+      } catch (err: any) {
+        recordStep("prepare", "Preparation failed", "failed", undefined, err.message);
+        throw err;
       }
 
-      // Step 5: Port Allocation & Services Provisioning
-      const existingProject = await getProject(projectDir);
-      let apiPort =
-        (typeof config?.proxy === "object" ? config.proxy.api?.port : undefined) ||
-        config?.services?.octane?.port ||
-        config?.port ||
-        existingProject?.port ||
-        8000;
+      // Step 5: Build Phase
+      const buildSpin = spinner(`Building application (${detection.framework})...`);
+      buildSpin.start();
+      try {
+        const buildRes = await provider.build(context);
+        buildSpin.succeed(`Application built in ${(buildRes.durationMs / 1000).toFixed(1)}s`);
+        recordStep("build", "Application build complete", "success", buildRes.durationMs);
+      } catch (err: any) {
+        buildSpin.fail(`Build failed: ${err.message}`);
+        recordStep("build", "Build failed", "failed", undefined, err.message);
+        throw err;
+      }
 
-      let reverbPort =
-        (typeof config?.proxy === "object" ? config.proxy.realtime?.port : undefined) ||
-        config?.services?.reverb?.port ||
-        config?.reverbPort ||
-        8080;
-
+      // Step 6: Services Provisioning & Restart
       if (!options.noRestart) {
         const srvSpin = spinner("Configuring & restarting systemd services...");
         srvSpin.start();
         const srvStepStart = Date.now();
         try {
-          const srvRes = await servicesManager.setupLaravelServices(
-            projectDir,
-            projectName,
-            capabilities,
-            config,
-            { octanePort: apiPort, reverbPort }
-          );
+          const serviceDefs = await provider.services(context, detection);
+          for (const srv of serviceDefs) {
+            await systemd.installService(srv.type, undefined, {
+              projectName,
+              projectPath: projectDir,
+              port: srv.port,
+              execStart: srv.command,
+              phpBinary: binaries.php,
+              nodeBinary: binaries.node,
+              bunBinary: binaries.bun,
+              octanePort: srv.port,
+              queueConnection: srv.queueConnection,
+              queues: srv.queues,
+            });
+            await systemd.restart(systemd.getServiceName(projectName, srv.type));
 
-          await servicesManager.restartProjectServices(projectName, {
-            octane: srvRes.octaneInstalled,
-            queue: srvRes.queueInstalled,
-            reverb: srvRes.reverbInstalled,
-          });
-
-          if (srvRes.octaneInstalled) report.services.octane = "restarted";
-          if (srvRes.queueInstalled) report.services.queue = "restarted";
-          if (srvRes.reverbInstalled) report.services.reverb = "restarted";
+            if (srv.type === "octane") report.services.octane = "restarted";
+            else if (srv.type === "queue") report.services.queue = "restarted";
+            else if (srv.type === "reverb") report.services.reverb = "restarted";
+          }
 
           const duration = Date.now() - srvStepStart;
           srvSpin.succeed(`Systemd services configured & restarted in ${(duration / 1000).toFixed(1)}s`);
-          recordStep("services", "Provisioned and restarted systemd services", "success", duration);
+          recordStep("services", "Systemd services running", "success", duration);
         } catch (err: any) {
-          srvSpin.fail(`Services restart failed: ${err.message}`);
+          srvSpin.fail(`Service management failed: ${err.message}`);
           recordStep("services", "Service restart failed", "failed", Date.now() - srvStepStart, err.message);
           throw err;
         }
@@ -248,115 +227,78 @@ export class DeploymentPipeline {
         recordStep("services", "Skipped service restart (--no-restart)", "skipped");
       }
 
-      // Step 6: Caddy Reverse Proxy Registration
-      const apiDomain =
-        (typeof config?.proxy === "object" ? config.proxy.api?.domain : undefined) ||
-        config?.domain ||
-        existingProject?.domain ||
-        `${projectName}.test`;
-
-      const reverbDomain =
-        (typeof config?.proxy === "object" ? config.proxy.realtime?.domain : undefined) ||
-        config?.reverbDomain;
-
-      report.proxy.apiDomain = apiDomain;
-      report.proxy.apiPort = apiPort;
-      report.proxy.reverbDomain = reverbDomain;
-      report.proxy.reverbPort = reverbPort;
-
+      // Step 7: Proxy Configuration
+      const proxyDefs = await provider.proxy(context, detection);
       const caddy = new CaddyProxy();
-      if (await caddy.detect()) {
+      if (await caddy.detect() && proxyDefs.length > 0) {
         const proxySpin = spinner("Configuring Caddy reverse proxy...");
         proxySpin.start();
         const proxyStepStart = Date.now();
         try {
-          const proxyConfigs: any[] = [
-            {
-              domain: apiDomain,
-              port: apiPort,
-              ssl: config?.ssl ?? true,
-            },
-          ];
+          await caddy.registerMultiple(proxyDefs);
 
-          if (reverbDomain) {
-            proxyConfigs.push({
-              domain: reverbDomain,
-              port: reverbPort,
-              ssl: config?.ssl ?? true,
-              websocket: true,
-            });
-          }
+          const primary = proxyDefs[0];
+          const existingProject = await getProject(projectDir);
 
-          await caddy.registerMultiple(proxyConfigs);
-
-          // Register in state store
           await registerProject({
             name: projectName,
-            domain: apiDomain,
-            port: apiPort,
-            framework: "laravel",
+            domain: primary.domain,
+            port: primary.port,
+            framework: detection.framework,
             proxy: "caddy",
             path: projectDir,
             registeredAt: existingProject?.registeredAt || new Date().toISOString(),
           });
 
-          report.proxy.status = "configured";
+          report.proxy = {
+            apiDomain: primary.domain,
+            apiPort: primary.port,
+            reverbDomain: proxyDefs.find((p) => p.websocket)?.domain,
+            reverbPort: proxyDefs.find((p) => p.websocket)?.port,
+            status: "configured",
+          };
+
           const duration = Date.now() - proxyStepStart;
-          proxySpin.succeed(`Caddy configured and reloaded in ${(duration / 1000).toFixed(1)}s`);
-          recordStep("proxy", "Configured Caddy routing and TLS", "success", duration);
+          proxySpin.succeed(`Caddy proxy configured in ${(duration / 1000).toFixed(1)}s`);
+          recordStep("proxy", "Caddy proxy configured", "success", duration);
         } catch (err: any) {
-          proxySpin.fail(`Caddy proxy registration failed: ${err.message}`);
+          proxySpin.fail(`Proxy configuration failed: ${err.message}`);
           report.proxy.status = "failed";
-          recordStep("proxy", "Caddy registration failed", "failed", Date.now() - proxyStepStart, err.message);
+          recordStep("proxy", "Proxy configuration failed", "failed", Date.now() - proxyStepStart, err.message);
         }
       }
 
-      // Step 7: Health Checks
-      const healthSpin = spinner("Performing health checks...");
+      // Step 8: Health Checks
+      const healthDefs = await provider.healthChecks(context, detection);
+      const healthSpin = spinner("Running health checks...");
       healthSpin.start();
       const healthStepStart = Date.now();
 
-      const healthUrl =
-        config?.health?.api?.url ||
-        (apiDomain.includes(".") ? `https://${apiDomain}` : undefined);
-
-      const healthRes = await performDeploymentHealthChecks({
-        apiUrl: healthUrl,
-        expectedStatus: config?.health?.api?.expectedStatus ?? 200,
-        timeoutMs: config?.health?.api?.timeoutMs ?? 5000,
-        projectName,
-        services: {
-          octane: report.services.octane === "restarted",
-          queue: report.services.queue === "restarted",
-          reverb: report.services.reverb === "restarted",
-        },
-        reverbPort: report.services.reverb === "restarted" ? reverbPort : undefined,
-        reverbDomain,
-      });
-
-      report.health = {
-        apiCheck: healthRes.api.checked
-          ? {
-              url: healthRes.api.url!,
-              status: healthRes.api.healthy ? "healthy" : "unhealthy",
-              code: healthRes.api.statusCode,
-            }
-          : undefined,
-        servicesCheck: healthRes.services.checked
-          ? {
-              allActive: healthRes.services.allActive,
-              details: healthRes.services.details,
-            }
-          : undefined,
-      };
+      let allHealthy = true;
+      for (const h of healthDefs) {
+        const res = await performDeploymentHealthChecks({
+          apiUrl: h.apiUrl,
+          expectedStatus: h.expectedStatus,
+          timeoutMs: h.timeoutMs,
+          projectName,
+          reverbPort: h.port,
+          reverbDomain: h.domain,
+          services: {
+            octane: report.services.octane === "restarted",
+            queue: report.services.queue === "restarted",
+            reverb: report.services.reverb === "restarted",
+          },
+        });
+        if (!res.overallHealthy) allHealthy = false;
+      }
 
       const healthDuration = Date.now() - healthStepStart;
-      if (healthRes.overallHealthy) {
+      if (allHealthy) {
         healthSpin.succeed(`Health checks passed in ${(healthDuration / 1000).toFixed(1)}s`);
         recordStep("health", "All health checks passed", "success", healthDuration);
       } else {
         healthSpin.warn("Health checks completed with warnings");
-        recordStep("health", "Some health checks warning/unhealthy", "success", healthDuration);
+        recordStep("health", "Health checks warning", "success", healthDuration);
       }
     } catch (err: any) {
       report.status = "failed";

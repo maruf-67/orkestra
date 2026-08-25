@@ -11,6 +11,10 @@ export interface SystemdServiceOptions {
   user?: string;
   group?: string;
   phpBinary?: string;
+  nodeBinary?: string;
+  bunBinary?: string;
+  execStart?: string;
+  port?: number;
   octaneServer?: string;
   octanePort?: number;
   maxRequests?: number;
@@ -24,9 +28,35 @@ export interface SystemdServiceOptions {
   reverbPort?: number;
 }
 
-export type ServiceType = "octane" | "queue" | "reverb";
+export type ServiceType = "web" | "octane" | "queue" | "reverb";
 
 const DEFAULT_TEMPLATES: Record<ServiceType, string> = {
+  web: `[Unit]
+Description=Orkestra Web ({{PROJECT_NAME}})
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{PROJECT_PATH}}
+EnvironmentFile=-{{PROJECT_PATH}}/.env
+Environment=PORT={{PORT}}
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+
+ExecStart={{EXEC_START}}
+
+Restart=always
+RestartSec=3s
+KillMode=mixed
+TimeoutStopSec=10s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+`,
   octane: `[Unit]
 Description=Orkestra Laravel Octane ({{PROJECT_NAME}})
 After=network.target
@@ -99,7 +129,7 @@ WantedBy=multi-user.target
 };
 
 export class SystemdManager {
-  private getServiceName(projectName: string, type: ServiceType): string {
+  getServiceName(projectName: string, type: ServiceType): string {
     const cleanName = projectName.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
     return `orkestra-${cleanName}-${type}.service`;
   }
@@ -120,7 +150,7 @@ export class SystemdManager {
   ): Promise<string> {
     const user = options.user || userInfo().username || "www-data";
     const group = options.group || user;
-    
+
     let templateContent = DEFAULT_TEMPLATES[type];
     if (templatePath && existsSync(templatePath)) {
       try {
@@ -133,9 +163,11 @@ export class SystemdManager {
       PROJECT_PATH: options.projectPath,
       USER: user,
       GROUP: group,
+      PORT: options.port || 3000,
+      EXEC_START: options.execStart || `${options.nodeBinary || "node"} server.js`,
       PHP_BIN: options.phpBinary || "php",
       OCTANE_SERVER: options.octaneServer || "roadrunner",
-      OCTANE_PORT: options.octanePort || 8000,
+      OCTANE_PORT: options.octanePort || options.port || 8000,
       MAX_REQUESTS: options.maxRequests || 500,
       QUEUE_CONNECTION: options.queueConnection || "redis",
       QUEUES: options.queues || "default",

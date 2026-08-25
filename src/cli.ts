@@ -23,6 +23,8 @@ import { share } from "./commands/share.js";
 import { deploy } from "./commands/deploy.js";
 import { services } from "./commands/services.js";
 import { rollback } from "./commands/rollback.js";
+import { monitor } from "./commands/monitor.js";
+import { inspect } from "./commands/inspect.js";
 import { mcp } from "./commands/mcp.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -35,7 +37,7 @@ export function run() {
 
   program
     .name("orkestra")
-    .description("A cross-platform development workspace manager and server deployment system")
+    .description("A capability-driven development workspace manager and server deployment system")
     .version(pkg.version);
 
   program
@@ -44,25 +46,25 @@ export function run() {
     .action(doctor);
 
   program
-    .command("check")
-    .description("Validate configuration and check for issues")
-    .option("-d, --dir <path>", "Project directory")
-    .option("--fix", "Attempt to fix issues automatically")
-    .action(check);
+    .command("inspect")
+    .description("Inspect project topology, framework, package manager, runtimes, ports, and databases")
+    .argument("[dir]", "Project directory path (default: current directory)")
+    .option("--json", "Output inspection data as JSON")
+    .action((dir, options) => {
+      inspect(dir, options);
+    });
 
   program
-    .command("init")
-    .description("Initialize and register project with proxy, hosts, and SSL")
-    .option("-d, --dir <path>", "Project directory")
-    .option("--domain <domain>", "Domain name")
-    .option("--port <port>", "Dev server port", parseInt)
-    .option("--proxy <proxy>", "Proxy provider (caddy, apache, nginx)")
-    .option("-y, --yes", "Skip prompts, use defaults (for CI/CD)")
-    .action(init);
+    .command("monitor")
+    .description("Live system and application observability dashboard (CPU, RAM, Disk, Systemd, Infrastructure)")
+    .option("-p, --project <name>", "Filter by project name")
+    .option("--json", "Output metrics as JSON")
+    .option("-w, --watch", "Auto-refresh dashboard every 2 seconds")
+    .action(monitor);
 
   program
     .command("deploy")
-    .description("Deploy application with git sync, dependencies, migrations, systemd services, and Caddy proxy")
+    .description("Deploy application (Laravel, Next.js, Nuxt) with git sync, build, systemd services, and Caddy proxy")
     .option("-d, --dir <path>", "Project directory")
     .option("-b, --branch <branch>", "Git branch (default: main)")
     .option("--strategy <strategy>", "Git strategy: reset or pull (default: reset)")
@@ -99,6 +101,23 @@ export function run() {
     .command("mcp")
     .description("Start the Model Context Protocol (MCP) server for AI assistants")
     .action(mcp);
+
+  program
+    .command("check")
+    .description("Validate configuration and check for issues")
+    .option("-d, --dir <path>", "Project directory")
+    .option("--fix", "Attempt to fix issues automatically")
+    .action(check);
+
+  program
+    .command("init")
+    .description("Initialize and register project with proxy, hosts, and SSL")
+    .option("-d, --dir <path>", "Project directory")
+    .option("--domain <domain>", "Domain name")
+    .option("--port <port>", "Dev server port", parseInt)
+    .option("--proxy <proxy>", "Proxy provider (caddy, apache, nginx)")
+    .option("-y, --yes", "Skip prompts, use defaults (for CI/CD)")
+    .action(init);
 
   program
     .command("remove")

@@ -11,6 +11,10 @@ import { optimizeLaravel } from "../deployment/laravel.js";
 import { detectCapabilities } from "../deployment/detector.js";
 import { readLogs } from "../utils/logger-file.js";
 import { loadConfig } from "../config/loader.js";
+import { collectMonitoringSnapshot } from "../monitoring/collector.js";
+import { providerRegistry } from "../deployment/providers/registry.js";
+import { resolveBinaries } from "../services/mise-resolver.js";
+import { detectDatabases } from "../detection/database.js";
 import { resolve, basename } from "node:path";
 
 export interface McpToolDefinition {
@@ -26,7 +30,7 @@ export interface McpToolDefinition {
 export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "orkestra_deploy",
-    description: "Deploy a Laravel/Node project with Git sync, Composer, Migrations, Systemd services, Caddy reverse proxy, and Health checks.",
+    description: "Deploy a Laravel, Next.js, or Nuxt project with Git sync, Dependencies, Build, Systemd services, Caddy reverse proxy, and Health checks.",
     inputSchema: {
       type: "object",
       properties: {
@@ -36,6 +40,26 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         dryRun: { type: "boolean", description: "If true, simulates the deployment without executing destructive actions" },
         noMigrate: { type: "boolean", description: "If true, skips database migrations" },
         noRestart: { type: "boolean", description: "If true, skips restarting services" },
+      },
+    },
+  },
+  {
+    name: "orkestra_monitor",
+    description: "Collect real-time system performance metrics (CPU, RAM, Disk, Load), infrastructure services (Caddy, Redis, PostgreSQL, MySQL), and application systemd process metrics.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Optional project name to filter" },
+      },
+    },
+  },
+  {
+    name: "orkestra_inspect",
+    description: "Inspect project framework, package manager, runtimes (Node/Bun/PHP), ports, services, database drivers, and reverse proxy settings.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dir: { type: "string", description: "Project directory path" },
       },
     },
   },
@@ -51,7 +75,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
   {
     name: "orkestra_services_status",
-    description: "Inspect live systemd service status for Octane, Queue Workers, Reverb WebSockets, Caddy, Redis, and MySQL.",
+    description: "Inspect live systemd service status for Octane, Queue Workers, Reverb WebSockets, Next/Nuxt Web SSR, Caddy, Redis, and MySQL.",
     inputSchema: {
       type: "object",
       properties: {
@@ -123,6 +147,38 @@ export async function handleMcpToolCall(name: string, args: Record<string, any>)
       return report;
     }
 
+    case "orkestra_monitor": {
+      const snapshot = await collectMonitoringSnapshot();
+      if (args.project) {
+        snapshot.applications = snapshot.applications.filter((a) =>
+          a.project.toLowerCase().includes(args.project.toLowerCase())
+        );
+      }
+      return snapshot;
+    }
+
+    case "orkestra_inspect": {
+      const targetDir = resolve(args.dir || process.cwd());
+      const config = await loadConfig(targetDir);
+      const existingProject = await getProject(targetDir);
+      const resolved = await providerRegistry.resolve(targetDir);
+      const binaries = await resolveBinaries(targetDir);
+      const databases = await detectDatabases(targetDir);
+
+      return {
+        project: config?.name || existingProject?.name || basename(targetDir),
+        path: targetDir,
+        framework: resolved?.detection.framework || "unknown",
+        version: resolved?.detection.version,
+        language: resolved?.detection.language || "unknown",
+        packageManager: resolved?.detection.packageManager || "unknown",
+        runtime: resolved?.detection.runtime || "node",
+        binaries,
+        databases: databases.filter((d) => d.detected).map((d) => d.name),
+        capabilities: resolved?.detection.capabilities || {},
+      };
+    }
+
     case "orkestra_status": {
       const projects = await listProjects();
       if (args.project) {
@@ -148,15 +204,16 @@ export async function handleMcpToolCall(name: string, args: Record<string, any>)
         projectStatuses.push(st);
       }
 
-      const [caddy, redis, mysql] = await Promise.all([
+      const [caddy, redis, postgresql, mysql] = await Promise.all([
         osService.status("caddy"),
         osService.status("redis"),
+        osService.status("postgresql"),
         osService.status("mysql"),
       ]);
 
       return {
         projects: projectStatuses,
-        system: { caddy, redis, mysql },
+        system: { caddy, redis, postgresql, mysql },
       };
     }
 

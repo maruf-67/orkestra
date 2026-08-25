@@ -4,6 +4,10 @@ export interface ResolvedBinaries {
   php: string;
   composer: string;
   node: string;
+  bun: string;
+  pnpm: string;
+  yarn: string;
+  npm: string;
   isMise: boolean;
 }
 
@@ -12,48 +16,40 @@ export async function resolveBinaries(cwd: string): Promise<ResolvedBinaries> {
   let phpPath = "php";
   let composerPath = "composer";
   let nodePath = "node";
+  let bunPath = "bun";
+  let pnpmPath = "pnpm";
+  let yarnPath = "yarn";
+  let npmPath = "npm";
 
-  if (isMise) {
-    try {
-      const phpRes = await run("mise", ["which", "php"], { cwd });
-      if (phpRes.exitCode === 0 && phpRes.stdout.trim()) {
-        phpPath = phpRes.stdout.trim();
-      } else {
-        const sysPhp = await which("php");
-        if (sysPhp) phpPath = sysPhp;
-      }
-
-      const composerRes = await run("mise", ["which", "composer"], { cwd });
-      if (composerRes.exitCode === 0 && composerRes.stdout.trim()) {
-        composerPath = composerRes.stdout.trim();
-      } else {
-        const sysComposer = await which("composer");
-        if (sysComposer) composerPath = sysComposer;
-      }
-
-      const nodeRes = await run("mise", ["which", "node"], { cwd });
-      if (nodeRes.exitCode === 0 && nodeRes.stdout.trim()) {
-        nodePath = nodeRes.stdout.trim();
-      } else {
-        const sysNode = await which("node");
-        if (sysNode) nodePath = sysNode;
-      }
-    } catch {
-      isMise = false;
+  const resolveTool = async (tool: string, fallbackDefault: string): Promise<string> => {
+    if (isMise) {
+      try {
+        const res = await run("mise", ["which", tool], { cwd });
+        if (res.exitCode === 0 && res.stdout.trim()) {
+          return res.stdout.trim();
+        }
+      } catch {}
     }
-  } else {
-    const sysPhp = await which("php");
-    if (sysPhp) phpPath = sysPhp;
-    const sysComposer = await which("composer");
-    if (sysComposer) composerPath = sysComposer;
-    const sysNode = await which("node");
-    if (sysNode) nodePath = sysNode;
-  }
+    const sysPath = await which(tool);
+    return sysPath || fallbackDefault;
+  };
+
+  phpPath = await resolveTool("php", "php");
+  composerPath = await resolveTool("composer", "composer");
+  nodePath = await resolveTool("node", "node");
+  bunPath = await resolveTool("bun", "bun");
+  pnpmPath = await resolveTool("pnpm", "pnpm");
+  yarnPath = await resolveTool("yarn", "yarn");
+  npmPath = await resolveTool("npm", "npm");
 
   return {
     php: phpPath,
     composer: composerPath,
     node: nodePath,
+    bun: bunPath,
+    pnpm: pnpmPath,
+    yarn: yarnPath,
+    npm: npmPath,
     isMise,
   };
 }
