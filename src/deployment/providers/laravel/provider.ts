@@ -9,7 +9,6 @@ import type {
   ProxyDefinition,
   HealthCheckDefinition,
 } from "../types.js";
-import { run } from "../../../utils/exec.js";
 import { installComposerDependencies } from "../../composer.js";
 import { runLaravelMigrations, ensureStorageLink, optimizeLaravel } from "../../laravel.js";
 
@@ -140,11 +139,12 @@ export class LaravelProvider implements ApplicationProvider {
       config?.reverbPort ||
       8080;
 
-    // Octane
+    // HTTP Service: Octane (if available/enabled) or standard Laravel web fallback
+    const octaneExplicitlyDisabled = config?.services?.octane?.enabled === false;
     const octaneEnabled =
-      config?.services?.octane?.enabled === true ||
-      (config?.services?.octane?.enabled === "auto" && detection.capabilities.hasOctane) ||
-      (config?.services?.octane?.enabled === undefined && detection.capabilities.hasOctane);
+      !octaneExplicitlyDisabled &&
+      (config?.services?.octane?.enabled === true ||
+       detection.capabilities.hasOctane);
 
     if (octaneEnabled) {
       const serverType = detection.capabilities.octaneServer !== "none"
@@ -157,9 +157,17 @@ export class LaravelProvider implements ApplicationProvider {
         port: apiPort,
         command: `${context.binaries.php} artisan octane:start --server=${serverType} --host=127.0.0.1 --port=${apiPort} --no-interaction`,
       });
+    } else {
+      // Standard Laravel HTTP Web service fallback (artisan serve under systemd)
+      services.push({
+        name: "web",
+        type: "web",
+        port: apiPort,
+        command: `${context.binaries.php} artisan serve --host=127.0.0.1 --port=${apiPort} --no-interaction`,
+      });
     }
 
-    // Queue
+    // Queue Worker
     const queueEnabled = config?.services?.queue?.enabled !== false;
     if (queueEnabled) {
       services.push({
@@ -171,7 +179,7 @@ export class LaravelProvider implements ApplicationProvider {
       });
     }
 
-    // Reverb
+    // Reverb WebSocket
     const reverbEnabled =
       config?.services?.reverb?.enabled === true ||
       (config?.services?.reverb?.enabled === "auto" && detection.capabilities.hasReverb) ||

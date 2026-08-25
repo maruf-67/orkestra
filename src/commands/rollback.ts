@@ -30,7 +30,6 @@ export async function rollback(options: RollbackOptions) {
   }
 
   let targetCommit = options.to;
-  let targetRecord = null;
 
   if (!targetCommit) {
     // Find the previous commit before current
@@ -40,7 +39,6 @@ export async function rollback(options: RollbackOptions) {
       process.exit(1);
     }
     targetCommit = lastSuccess.previousCommit;
-    targetRecord = lastSuccess;
   }
 
   log.info(`Target commit for rollback: ${targetCommit.substring(0, 7)}`);

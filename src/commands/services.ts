@@ -33,14 +33,19 @@ export async function services(options: ServicesOptions) {
     for (const p of targetProjects) {
       const config = await loadConfig(p.path);
       const octaneName = systemd.getServiceNameFor(p.name, "octane");
+      const webName = systemd.getServiceNameFor(p.name, "web");
       const queueName = systemd.getServiceNameFor(p.name, "queue");
       const reverbName = systemd.getServiceNameFor(p.name, "reverb");
 
-      const [octaneSt, queueSt, reverbSt] = await Promise.all([
+      const [octaneSt, webSt, queueSt, reverbSt] = await Promise.all([
         systemd.getStatus(octaneName),
+        systemd.getStatus(webName),
         systemd.getStatus(queueName),
         systemd.getStatus(reverbName),
       ]);
+
+      const isOctaneActive = octaneSt === "running";
+      const isWebActive = webSt === "running";
 
       projectResults.push({
         project: p.name,
@@ -49,16 +54,21 @@ export async function services(options: ServicesOptions) {
         port: p.port,
         reverbPort: config?.reverbPort || 8080,
         services: {
-          octane: { name: octaneName, status: octaneSt },
+          http: {
+            type: isOctaneActive || (!isWebActive && octaneSt !== "unknown") ? "octane" : "web",
+            name: isOctaneActive || (!isWebActive && octaneSt !== "unknown") ? octaneName : webName,
+            status: isOctaneActive ? octaneSt : (isWebActive ? webSt : (octaneSt !== "unknown" ? octaneSt : webSt)),
+          },
           queue: { name: queueName, status: queueSt },
           reverb: { name: reverbName, status: reverbSt },
         },
       });
     }
 
-    const [caddySt, redisSt, mysqlSt] = await Promise.all([
+    const [caddySt, redisSt, pgsqlSt, mysqlSt] = await Promise.all([
       osService.status("caddy"),
       osService.status("redis"),
+      osService.status("postgresql"),
       osService.status("mysql"),
     ]);
 
@@ -70,6 +80,7 @@ export async function services(options: ServicesOptions) {
             system: {
               caddy: caddySt,
               redis: redisSt,
+              postgresql: pgsqlSt,
               mysql: mysqlSt,
             },
           },
@@ -84,6 +95,7 @@ export async function services(options: ServicesOptions) {
     table([
       ["Caddy (Reverse Proxy)", caddySt === "running" ? "\x1b[32m● running\x1b[0m" : `\x1b[31m○ ${caddySt}\x1b[0m`],
       ["Redis (Queues/Cache)", redisSt === "running" ? "\x1b[32m● running\x1b[0m" : `\x1b[33m○ ${redisSt}\x1b[0m`],
+      ["PostgreSQL (Database)", pgsqlSt === "running" ? "\x1b[32m● running\x1b[0m" : `\x1b[33m○ ${pgsqlSt}\x1b[0m`],
       ["MySQL (Database)", mysqlSt === "running" ? "\x1b[32m● running\x1b[0m" : `\x1b[33m○ ${mysqlSt}\x1b[0m`],
     ]);
 
@@ -96,8 +108,10 @@ export async function services(options: ServicesOptions) {
         return `\x1b[90m- not installed\x1b[0m`;
       };
 
+      const httpLabel = pr.services.http.type === "octane" ? "HTTP (Octane)" : "HTTP (Laravel Web)";
+
       table([
-        ["API (Octane)", formatStatus(pr.services.octane.status, `(:${pr.port})`)],
+        [httpLabel, formatStatus(pr.services.http.status, `(:${pr.port})`)],
         ["Queue Worker", formatStatus(pr.services.queue.status)],
         ["Reverb (WebSocket)", formatStatus(pr.services.reverb.status, `(:${pr.reverbPort})`)],
       ]);

@@ -1,4 +1,3 @@
-import type { OrkestraConfig, DeploymentConfig, ServicesConfig } from "../config/schema.js";
 
 export interface ProjectCapabilities {
   isLaravel: boolean;

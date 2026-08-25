@@ -140,7 +140,8 @@ export async function start(options: StartOptions) {
 
     if (domain) {
       const { detectProxy } = await import("../detection/proxy.js");
-      const proxy = await detectProxy(config?.proxy);
+      const proxyName = typeof config?.proxy === "object" ? config.proxy.provider : config?.proxy;
+      const proxy = await detectProxy(proxyName);
       if (proxy) {
         log.dim("Updating proxy configuration for port " + port + "...");
         await proxy.unregister(domain);

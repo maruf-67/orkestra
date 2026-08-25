@@ -235,7 +235,13 @@ export class DeploymentPipeline {
         proxySpin.start();
         const proxyStepStart = Date.now();
         try {
-          await caddy.registerMultiple(proxyDefs);
+          await caddy.registerMultiple(
+            proxyDefs.map((p) => ({
+              domain: p.domain,
+              port: p.port,
+              ssl: p.ssl ?? true,
+            }))
+          );
 
           const primary = proxyDefs[0];
           const existingProject = await getProject(projectDir);
@@ -297,7 +303,7 @@ export class DeploymentPipeline {
         healthSpin.succeed(`Health checks passed in ${(healthDuration / 1000).toFixed(1)}s`);
         recordStep("health", "All health checks passed", "success", healthDuration);
       } else {
-        healthSpin.warn("Health checks completed with warnings");
+        healthSpin.fail("Health checks completed with warnings");
         recordStep("health", "Health checks warning", "success", healthDuration);
       }
     } catch (err: any) {

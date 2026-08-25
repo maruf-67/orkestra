@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { run, sudoWriteFile } from "../utils/exec.js";
-import { getPlatform, isLinux } from "../platform/index.js";
+import { isLinux } from "../platform/index.js";
 import { userInfo } from "node:os";
 
 export interface SystemdServiceOptions {

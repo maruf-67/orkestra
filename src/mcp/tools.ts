@@ -4,7 +4,7 @@ import { servicesManager } from "../services/manager.js";
 import { systemd } from "../services/systemd.js";
 import { OsServiceProvider } from "../providers/service/service.js";
 import { performDeploymentHealthChecks } from "../deployment/health.js";
-import { getLastSuccessfulDeployment, getDeploymentHistory } from "../deployment/history.js";
+import { getLastSuccessfulDeployment } from "../deployment/history.js";
 import { checkoutCommit } from "../deployment/git.js";
 import { installComposerDependencies } from "../deployment/composer.js";
 import { optimizeLaravel } from "../deployment/laravel.js";
