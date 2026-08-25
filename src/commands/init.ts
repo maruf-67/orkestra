@@ -48,7 +48,7 @@ export async function init(options: InitOptions) {
   // Detect package manager
   const pmSpin = spinner("Detecting package manager...");
   pmSpin.start();
-  const pm = await detectPackageManager();
+  const pm = await detectPackageManager(projectDir);
   if (pm) {
     pmSpin.succeed(`Package manager: ${pm.name}`);
   } else {
