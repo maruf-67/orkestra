@@ -131,7 +131,7 @@ export async function registerProjectAuto(
     const detectedPort = await detectPortFromProject(projectDir, framework?.name || "");
     port = detectedPort || framework?.port || 3000;
   }
-  port = await findAvailablePort(port);
+  port = await findAvailablePort(port, projectDir);
 
   // Add to hosts file
   const hosts = new HostsFileProvider();
