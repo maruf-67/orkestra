@@ -39,17 +39,36 @@ export class OsServiceProvider implements ServiceProvider {
 
   async status(service: string): Promise<"running" | "stopped" | "unknown"> {
     const platform = getPlatform();
+
+    const serviceAliases: Record<string, string[]> = {
+      postgresql: ["postgresql", "postgres"],
+      postgres: ["postgresql", "postgres"],
+      mysql: ["mysql", "mariadb", "mysqld"],
+      redis: ["redis", "redis-server"],
+      caddy: ["caddy"],
+    };
+
+    const candidates = serviceAliases[service.toLowerCase()] || [service];
+
     if (isWindows()) {
-      const result = await run("sc", ["query", service]);
-      return result.stdout.includes("RUNNING") ? "running" : "stopped";
+      for (const cand of candidates) {
+        const result = await run("sc", ["query", cand]);
+        if (result.stdout.includes("RUNNING")) return "running";
+      }
+      return "stopped";
     } else if (platform.serviceManager === "systemctl") {
-      const result = await run("systemctl", ["is-active", service]);
-      return result.stdout.trim() === "active" ? "running" : "stopped";
+      for (const cand of candidates) {
+        const result = await run("systemctl", ["is-active", cand]);
+        if (result.stdout.trim() === "active") return "running";
+      }
+      return "stopped";
     } else if (platform.serviceManager === "launchctl") {
       const result = await run("brew", ["services", "list"]);
-      const line = result.stdout.split("\n").find((l) => l.includes(service));
-      if (line?.includes("started")) return "running";
-      if (line?.includes("stopped")) return "stopped";
+      for (const cand of candidates) {
+        const line = result.stdout.split("\n").find((l) => l.includes(cand));
+        if (line?.includes("started")) return "running";
+      }
+      return "stopped";
     }
     return "unknown";
   }

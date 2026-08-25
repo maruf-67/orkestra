@@ -1,149 +1,181 @@
 # Orkestra
 
-**A cross-platform development workspace manager.**
+**A capability-driven development workspace manager and server deployment system.**
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/maruf-67/orkestra)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/maruf-67/orkestra)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
+[![Bun](https://img.shields.io/badge/bun-%3E%3D1.4-black.svg)](https://bun.sh)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)]()
 
-Orkestra orchestrates your local development environment — reverse proxy, hosts file, SSL certificates, runtime detection, process management, logging, and health monitoring — into a single CLI.
+Orkestra orchestrates local workspace environments and automates production cloud server deployments (**Laravel**, **Next.js**, **Nuxt**) with **Systemd process supervision**, **Caddy reverse proxying**, **Mise runtime management** (PHP 8.4, Bun 1.4+, Node.js, Composer, pnpm), **real-time observability** (`orkestra monitor`), and native **Model Context Protocol (MCP)** AI server integration.
+
+---
+
+## Key Features
+
+- **Multi-Framework Application Providers**: Pluggable provider architecture for **Laravel** (Octane, Queue Workers, Reverb WebSockets), **Next.js** (SSR Web), and **Nuxt** (Nitro SSR).
+- **Runtime Abstraction**: First-class support for **Bun (1.4+)**, **Node.js**, and **PHP 8.4**, dynamically resolved via **Mise** or system binaries.
+- **Package Manager Intelligence**: Auto-detects `pnpm`, `bun`, `yarn`, `npm`, and `composer` with frozen/immutable lockfile installations (`--frozen-lockfile`, `--immutable`, `ci`).
+- **Systemd Supervision & Reliability**: Native Systemd templates without PM2 overhead, auto-restarts, worker recycling, and zero-downtime reloads.
+- **Automatic Caddy Proxy**: Instant public Let's Encrypt / ZeroSSL HTTPS certificates and `tls internal` for local development.
+- **Live System Observability**: `orkestra monitor` displays CPU, RAM, Disk, Load, Systemd process metrics (`MemoryCurrent`, `CPUUsageNSec`), crash-loop detection, and infrastructure health (Caddy, Redis, PostgreSQL, MySQL).
+- **Application Topology Inspector**: `orkestra inspect` provides deep insight into framework versions, package managers, runtimes, ports, databases, and routes.
+- **Model Context Protocol (MCP)**: Native JSON-RPC MCP server (`orkestra mcp`) allowing AI assistants (Claude, Antigravity, AI-OS) to deploy, inspect, monitor, diagnose, and rollback servers autonomously.
+
+---
 
 ## Quick Start
 
-```bash
-# Install
-npm install -g orkestra
+### Local Workspace Development
 
-# Initialize project
-cd ~/projects/my-app
+```bash
+# In your project directory (Laravel / Next.js / Nuxt)
 orkestra init
 
-# Start server
+# Start local server with HTTPS proxy
 orkestra up
 
 # Check status
 orkestra status
 
-# View logs
+# View live application logs
 orkestra logs
-
-# Stop server
-orkestra down
 ```
 
-## Features
+### Production Deployment & Observability
 
-| Feature | Description |
-|---------|-------------|
-| **Auto-detection** | Framework, package manager, port detection |
-| **Smart installer** | Offers to install Caddy/mkcert with permission |
-| **Process management** | Start, stop, restart dev servers |
-| **Log capture** | Capture and view server logs |
-| **Health monitoring** | Auto-restart on crash |
-| **Cross-platform** | Linux, macOS, Windows |
-| **Shell completions** | ZSH, Bash, Fish, PowerShell |
+```bash
+# Deploy locally or to remote server over SSH
+orkestra deploy
 
-## Commands
+# Inspect application topology and capabilities
+orkestra inspect
+
+# Live monitoring dashboard (CPU, RAM, Systemd, Caddy, DBs)
+orkestra monitor --watch
+
+# Service health & status
+orkestra services
+
+# Rollback to previous stable commit
+orkestra rollback
+```
+
+---
+
+## Commands Reference
 
 | Command | Description |
 |---------|-------------|
-| `orkestra init` | Initialize and register project |
-| `orkestra up` | Start dev server |
-| `orkestra down` | Stop dev server |
-| `orkestra status` | Show project status |
-| `orkestra logs` | View server logs |
-| `orkestra shell` | Open shell with env vars |
-| `orkestra remove` | Remove project completely |
-| `orkestra doctor` | Check system capabilities |
-| `orkestra completions` | Generate shell completions |
-| `orkestra share` | Share project via tunnel |
+| `orkestra deploy` | One-command deployment (Git sync, dependencies, build, systemd, Caddy, health checks) |
+| `orkestra monitor` | Real-time system, infrastructure, and systemd application observability dashboard |
+| `orkestra inspect` | Deep inspection of project framework, package manager, runtimes, and databases |
+| `orkestra services` | Live status of application services (Octane, Queue, Reverb, Web SSR) and databases |
+| `orkestra rollback` | Instant rollback to the previous or a specific commit SHA |
+| `orkestra mcp` | Starts the Model Context Protocol (MCP) server for AI agents |
+| `orkestra init` | Initialize and register project with proxy, hosts, and SSL |
+| `orkestra up` | Start dev server in background or foreground |
+| `orkestra down` | Stop running project server |
+| `orkestra status` | Show project status and allocated ports |
+| `orkestra logs` | View server output and error logs |
+| `orkestra doctor` | Verify system runtimes, proxies, package managers, and databases |
+| `orkestra share` | Share local project publicly via tunnel |
 
-## Platform Support
+---
 
-| Platform | Proxy | SSL | Completions |
-|----------|-------|-----|-------------|
-| Linux | Caddy/Apache/Nginx | mkcert | bash/zsh/fish |
-| macOS | Caddy/Apache/Nginx | mkcert | bash/zsh/fish |
-| Windows | Caddy | mkcert | PowerShell |
+## Configuration (`.orkestra.yml`)
 
-## Smart Installer
-
-When tools are missing, Orkestra offers to install them:
-
-```bash
-$ orkestra init
-
-⚠ No proxy detected
-? Caddy is not installed. Install it now? (Y/n) Y
-✓ Caddy installed successfully
-✓ Project registered successfully!
-```
-
-## Documentation
-
-- **[Getting Started](docs/getting-started.md)** — Installation and first steps
-- **[User Guide](docs/user-guide.md)** — Complete command reference
-- **[Configuration](docs/configuration.md)** — `.orkestra.yml` reference
-- **[Installation](docs/installation.md)** — Platform-specific setup
-- **[Troubleshooting](docs/troubleshooting.md)** — Common issues and solutions
-- **[Architecture](docs/architecture.md)** — System design (for developers)
-
-## Examples
-
-### Next.js Project
-
-```bash
-cd ~/projects/my-next-app
-orkestra init --port 3000
-orkestra up
-# Open https://my-next-app.dev.com
-```
-
-### Laravel Project
-
-```bash
-cd ~/projects/my-laravel-app
-orkestra init --port 8000
-orkestra up
-# Open https://my-laravel-app.dev.com
-```
-
-### Multiple Projects
-
-```bash
-# Start all projects
-orkestra up --all
-
-# Check all status
-orkestra status
-
-# Stop all
-orkestra down --all
-```
-
-## Configuration
+### Next.js Example (Bun / Node)
 
 ```yaml
-# .orkestra.yml
-name: my-app
-port: 3000
-domain: my-app.dev.com
-ssl: true
-proxy: auto
-startCommand: "pnpm dev"
+name: digital-library-web
+
+deployment:
+  branch: main
+  strategy: reset
+
+  remote:
+    host: oracle-vps
+    path: /srv/apps/digital-library-web
+
+proxy:
+  provider: caddy
+  api:
+    domain: app.book.almaruf67.com
+    port: 3000
+
+health:
+  api:
+    url: https://app.book.almaruf67.com/api/health
+    expectedStatus: 200
 ```
 
-## Requirements
+### Laravel Example (Octane + Reverb + Queue + PostgreSQL)
 
-- **Node.js** 22+
-- **Caddy** (auto-installed if missing)
-- **mkcert** (auto-installed if missing)
-- **localtunnel** (auto-installed if sharing)
+```yaml
+name: digital-library-api
 
-## Contributing
+deployment:
+  branch: main
+  remote:
+    host: oracle-vps
+    path: /srv/apps/digital-library-api
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+services:
+  octane:
+    enabled: auto
+    server: roadrunner
+    port: 8000
+
+  queue:
+    enabled: true
+    connection: redis
+
+  reverb:
+    enabled: auto
+    port: 8080
+
+proxy:
+  provider: caddy
+  api:
+    domain: book-api.almaruf67.com
+    port: 8000
+
+  realtime:
+    domain: reverb.almaruf67.com
+    port: 8080
+    websocket: true
+```
+
+---
+
+## AI & MCP Server Integration
+
+Orkestra includes a built-in MCP server that exposes tools to AI coding assistants and autonomous agents:
+
+```json
+{
+  "mcpServers": {
+    "orkestra": {
+      "command": "orkestra",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Available MCP Tools:
+- `orkestra_deploy`: Autonomous deployment execution with dry-run/migration controls.
+- `orkestra_monitor`: Live system, infrastructure, and application process performance metrics.
+- `orkestra_inspect`: Project framework, package manager, runtime, and database metadata.
+- `orkestra_services_status`: Systemd and infrastructure health inspection.
+- `orkestra_services_action`: Start / Stop / Restart / Reload systemd units.
+- `orkestra_logs`: Retrieve recent log streams.
+- `orkestra_health_check`: Automated endpoint and WebSocket health verification.
+- `orkestra_rollback`: One-step automated recovery.
+
+---
 
 ## License
 

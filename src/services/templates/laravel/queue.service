@@ -1,0 +1,21 @@
+[Unit]
+Description=Orkestra Laravel Queue Worker ({{PROJECT_NAME}})
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{PROJECT_PATH}}
+EnvironmentFile=-{{PROJECT_PATH}}/.env
+
+ExecStart={{PHP_BIN}} artisan queue:work {{QUEUE_CONNECTION}} --queue={{QUEUES}} --sleep={{SLEEP}} --tries={{TRIES}} --timeout={{TIMEOUT}} --max-jobs={{MAX_JOBS}} --max-time={{MAX_TIME}} --no-interaction
+
+Restart=always
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=90s
+
+[Install]
+WantedBy=multi-user.target

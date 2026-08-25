@@ -1,0 +1,23 @@
+[Unit]
+Description=Orkestra Laravel Octane ({{PROJECT_NAME}})
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{PROJECT_PATH}}
+EnvironmentFile=-{{PROJECT_PATH}}/.env
+
+ExecStart={{PHP_BIN}} artisan octane:start --server={{OCTANE_SERVER}} --host=127.0.0.1 --port={{OCTANE_PORT}} --max-requests={{MAX_REQUESTS}} --no-interaction
+ExecReload={{PHP_BIN}} artisan octane:reload
+
+Restart=always
+RestartSec=3s
+KillMode=mixed
+TimeoutStopSec=10s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

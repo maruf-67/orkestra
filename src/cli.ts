@@ -20,6 +20,12 @@ import { shell } from "./commands/shell.js";
 import { completions } from "./commands/completions.js";
 import { check } from "./commands/check.js";
 import { share } from "./commands/share.js";
+import { deploy } from "./commands/deploy.js";
+import { services } from "./commands/services.js";
+import { rollback } from "./commands/rollback.js";
+import { monitor } from "./commands/monitor.js";
+import { inspect } from "./commands/inspect.js";
+import { mcp } from "./commands/mcp.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -31,13 +37,70 @@ export function run() {
 
   program
     .name("orkestra")
-    .description("A cross-platform development workspace manager")
+    .description("A capability-driven development workspace manager and server deployment system")
     .version(pkg.version);
 
   program
     .command("doctor")
     .description("Check system capabilities and dependencies")
     .action(doctor);
+
+  program
+    .command("inspect")
+    .description("Inspect project topology, framework, package manager, runtimes, ports, and databases")
+    .argument("[dir]", "Project directory path (default: current directory)")
+    .option("--json", "Output inspection data as JSON")
+    .action((dir, options) => {
+      inspect(dir, options);
+    });
+
+  program
+    .command("monitor")
+    .description("Live system and application observability dashboard (CPU, RAM, Disk, Systemd, Infrastructure)")
+    .option("-p, --project <name>", "Filter by project name")
+    .option("--json", "Output metrics as JSON")
+    .option("-w, --watch", "Auto-refresh dashboard every 2 seconds")
+    .action(monitor);
+
+  program
+    .command("deploy")
+    .description("Deploy application (Laravel, Next.js, Nuxt) with git sync, build, systemd services, and Caddy proxy")
+    .option("-d, --dir <path>", "Project directory")
+    .option("-b, --branch <branch>", "Git branch (default: main)")
+    .option("--strategy <strategy>", "Git strategy: reset or pull (default: reset)")
+    .option("--dry-run", "Simulate deployment without modifying system state")
+    .option("--no-migrate", "Skip database migrations")
+    .option("--no-restart", "Skip restarting systemd services")
+    .option("--remote <host>", "Remote SSH server host to deploy to")
+    .option("-y, --yes", "Skip interactive prompts")
+    .action(deploy);
+
+  program
+    .command("services")
+    .description("Show live status of application and system services (Octane, Queue, Reverb, Caddy, Redis, MySQL)")
+    .option("-p, --project <name>", "Project name filter")
+    .option("--json", "Output as JSON")
+    .option("-w, --watch", "Auto-refresh dashboard")
+    .action(services);
+
+  program
+    .command("rollback")
+    .description("Rollback application deployment to the previous or a specific commit")
+    .argument("[project]", "Project name (optional)")
+    .option("-d, --dir <path>", "Project directory")
+    .option("--to <commit>", "Specific commit SHA to rollback to")
+    .option("--dry-run", "Simulate rollback without executing changes")
+    .action((projectArg, options) => {
+      if (projectArg && !options.project) {
+        options.project = projectArg;
+      }
+      rollback(options);
+    });
+
+  program
+    .command("mcp")
+    .description("Start the Model Context Protocol (MCP) server for AI assistants")
+    .action(mcp);
 
   program
     .command("check")
@@ -72,24 +135,24 @@ export function run() {
     .description("Start dev server")
     .option("-d, --dir <path>", "Project directory")
     .option("-p, --project <name>", "Project name (lookup from state)")
-     .option("--port <port>", "Dev server port", parseInt)
-     .option("-f, --foreground", "Run in foreground (see output directly)")
-     .option("-a, --all", "Start all registered projects")
-     .action(up);
+    .option("--port <port>", "Dev server port", parseInt)
+    .option("-f, --foreground", "Run in foreground (see output directly)")
+    .option("-a, --all", "Start all registered projects")
+    .action(up);
 
-   program
-     .command("start")
-     .description("Start production server (build + start)")
-     .option("-d, --dir <path>", "Project directory")
-     .option("-p, --project <name>", "Project name (lookup from state)")
-     .option("--port <port>", "Server port", parseInt)
-     .option("-f, --foreground", "Run in foreground (see output directly)")
-     .option("--build", "Run build before starting (default: true)", true)
-     .action(start);
+  program
+    .command("start")
+    .description("Start production server (build + start)")
+    .option("-d, --dir <path>", "Project directory")
+    .option("-p, --project <name>", "Project name (lookup from state)")
+    .option("--port <port>", "Server port", parseInt)
+    .option("-f, --foreground", "Run in foreground (see output directly)")
+    .option("--build", "Run build before starting (default: true)", true)
+    .action(start);
 
-   program
-     .command("down")
-     .description("Stop dev server")
+  program
+    .command("down")
+    .description("Stop dev server")
     .option("-d, --dir <path>", "Project directory")
     .option("-p, --project <name>", "Project name (lookup from state)")
     .option("-a, --all", "Stop all running servers")
@@ -178,7 +241,6 @@ export function run() {
     .option("--status", "Show share status")
     .option("--url", "Show and copy tunnel URL")
     .action((projectName, options) => {
-      // Handle positional argument as project name
       if (projectName && !options.project) {
         options.project = projectName;
       }
