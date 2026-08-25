@@ -101,7 +101,7 @@ export async function syncLaravelProject(
             if (updated.includes("octane:start")) {
               updated = updated.replace(/(["']php artisan octane:start[^"']*["'])/, `$1 ${reverbCmd}`);
               if (updated.includes("--names=")) {
-                updated = updated.replace(/--names=([^\s]+)/, (match, names) => {
+                updated = updated.replace(/--names=([^\s]+)/, (_, names) => {
                   const parts = names.split(",");
                   if (!parts.includes("reverb")) {
                     const insertIdx = parts.indexOf("octane") !== -1 ? parts.indexOf("octane") + 1 : 1;

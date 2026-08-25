@@ -1,5 +1,5 @@
 import { resolve, basename } from "node:path";
-import { log, heading, table } from "../utils/logger.js";
+import { heading, table } from "../utils/logger.js";
 import { providerRegistry } from "../deployment/providers/registry.js";
 import { resolveBinaries } from "../services/mise-resolver.js";
 import { detectDatabases } from "../detection/database.js";

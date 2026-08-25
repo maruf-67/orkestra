@@ -1,6 +1,5 @@
 import os from "node:os";
 import { run } from "../utils/exec.js";
-import { isLinux } from "../platform/index.js";
 import type { SystemMetrics } from "./types.js";
 
 function formatUptime(seconds: number): string {

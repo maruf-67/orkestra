@@ -1,0 +1,22 @@
+[Unit]
+Description=Orkestra Laravel Web ({{PROJECT_NAME}})
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{PROJECT_PATH}}
+EnvironmentFile=-{{PROJECT_PATH}}/.env
+
+ExecStart={{PHP_BIN}} artisan serve --host=127.0.0.1 --port={{PORT}} --no-interaction
+
+Restart=always
+RestartSec=3s
+KillMode=mixed
+TimeoutStopSec=10s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

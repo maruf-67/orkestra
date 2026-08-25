@@ -138,7 +138,8 @@ export async function registerProjectAuto(
   await hosts.add(domain);
 
   // Detect and configure proxy
-  let proxy = await detectProxy(options?.proxy || config?.proxy);
+  const proxyPref = options?.proxy || (typeof config?.proxy === "object" ? config.proxy.provider : config?.proxy);
+  let proxy = await detectProxy(proxyPref);
 
   if (proxy) {
     await proxy.register({ domain, port, ssl: config?.ssl ?? true });

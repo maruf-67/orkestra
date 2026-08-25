@@ -31,16 +31,25 @@ export async function collectMonitoringSnapshot(): Promise<MonitoringSnapshot> {
 
     if (isLaravel) {
       const octaneName = systemd.getServiceName(p.name, "octane");
+      const webName = systemd.getServiceName(p.name, "web");
       const queueName = systemd.getServiceName(p.name, "queue");
       const reverbName = systemd.getServiceName(p.name, "reverb");
 
-      const [octane, queue, reverb] = await Promise.all([
+      const [octane, web, queue, reverb] = await Promise.all([
         collectServiceMetrics("Octane (API)", octaneName, "octane"),
+        collectServiceMetrics("Laravel Web (HTTP)", webName, "web"),
         collectServiceMetrics("Queue Worker", queueName, "queue"),
         collectServiceMetrics("Reverb (WSS)", reverbName, "reverb"),
       ]);
 
-      serviceList.push(octane, queue, reverb);
+      // If Octane is active or installed, show Octane, else show Laravel Web
+      if (octane.status === "running" || (web.status !== "running" && octane.status !== "inactive")) {
+        serviceList.push(octane);
+      } else {
+        serviceList.push(web);
+      }
+
+      serviceList.push(queue, reverb);
     } else {
       const webName = systemd.getServiceName(p.name, "web");
       const web = await collectServiceMetrics("Web (SSR)", webName, "web");
