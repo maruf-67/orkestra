@@ -15,11 +15,16 @@ export class NuxtProvider implements ApplicationProvider {
   readonly name = "nuxt";
   readonly framework = "nuxt";
 
-  private detectPackageManager(dir: string): "pnpm" | "bun" | "yarn" | "npm" {
-    if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm";
+  private detectPackageManager(dir: string, explicitPm?: string): "bun" | "pnpm" | "npm" | "yarn" {
+    if (explicitPm && explicitPm !== "auto") {
+      return explicitPm as "bun" | "pnpm" | "npm" | "yarn";
+    }
+    // Top Priority: Bun, then pnpm, then npm, then yarn
     if (existsSync(join(dir, "bun.lock")) || existsSync(join(dir, "bun.lockb"))) return "bun";
+    if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm";
+    if (existsSync(join(dir, "package-lock.json"))) return "npm";
     if (existsSync(join(dir, "yarn.lock"))) return "yarn";
-    return "npm";
+    return "bun";
   }
 
   async detect(dir: string): Promise<ApplicationDetection | null> {
@@ -61,15 +66,16 @@ export class NuxtProvider implements ApplicationProvider {
 
   async installDependencies(context: DeploymentContext): Promise<{ durationMs: number; output: string }> {
     const start = Date.now();
-    const pm = this.detectPackageManager(context.projectDir);
+    const explicitPm = context.config?.deployment?.packageManager || context.config?.packageManager;
+    const pm = this.detectPackageManager(context.projectDir, explicitPm);
     let cmd = context.binaries[pm] || pm;
     let args: string[] = [];
 
     switch (pm) {
-      case "pnpm":
+      case "bun":
         args = ["install", "--frozen-lockfile"];
         break;
-      case "bun":
+      case "pnpm":
         args = ["install", "--frozen-lockfile"];
         break;
       case "yarn":
@@ -82,6 +88,7 @@ export class NuxtProvider implements ApplicationProvider {
 
     const res = await run(cmd, args, { cwd: context.projectDir });
     if (res.exitCode !== 0) {
+      // Fallback to standard install if frozen lockfile fails
       const fallback = await run(cmd, ["install"], { cwd: context.projectDir });
       if (fallback.exitCode !== 0) {
         throw new Error(`Failed to install dependencies with ${pm}:\n${fallback.stderr || fallback.stdout}`);
@@ -98,7 +105,8 @@ export class NuxtProvider implements ApplicationProvider {
 
   async build(context: DeploymentContext): Promise<{ durationMs: number; output: string }> {
     const start = Date.now();
-    const pm = this.detectPackageManager(context.projectDir);
+    const explicitPm = context.config?.deployment?.packageManager || context.config?.packageManager;
+    const pm = this.detectPackageManager(context.projectDir, explicitPm);
     const cmd = context.binaries[pm] || pm;
 
     const res = await run(cmd, ["run", "build"], {
@@ -124,11 +132,12 @@ export class NuxtProvider implements ApplicationProvider {
       context.config?.port ||
       3000;
 
-    const pm = this.detectPackageManager(context.projectDir);
+    const explicitPm = context.config?.deployment?.packageManager || context.config?.packageManager;
+    const pm = this.detectPackageManager(context.projectDir, explicitPm);
     const serverFile = join(context.projectDir, ".output", "server", "index.mjs");
     let execStart = "";
 
-    if (pm === "bun") {
+    if (pm === "bun" || context.binaries.bun) {
       execStart = `${context.binaries.bun} ${serverFile}`;
     } else {
       execStart = `${context.binaries.node} ${serverFile}`;

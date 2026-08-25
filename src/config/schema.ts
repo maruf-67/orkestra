@@ -11,6 +11,7 @@ export const remoteConfigSchema = z.object({
 export const deploymentConfigSchema = z.object({
   branch: z.string().default("main"),
   strategy: z.enum(["reset", "pull"]).default("reset"),
+  packageManager: z.enum(["auto", "bun", "pnpm", "npm", "yarn"]).default("auto"),
   remote: remoteConfigSchema.optional(),
   php: z.union([
     z.string(),
@@ -59,8 +60,8 @@ export const queueServiceSchema = z.object({
 
 export const reverbServiceSchema = z.object({
   enabled: z.union([z.boolean(), z.literal("auto")]).default("auto"),
-  host: z.string().default("127.0.0.1"),
   port: z.number().int().min(1024).max(65535).default(8080),
+  domain: z.string().optional(),
 });
 
 export const servicesConfigSchema = z.object({
@@ -100,6 +101,7 @@ export const healthCheckConfigSchema = z.object({
 export const orkestraConfigSchema = z.object({
   name: z.string().optional(),
   framework: z.string().optional(),
+  packageManager: z.enum(["auto", "bun", "pnpm", "npm", "yarn"]).default("auto"),
   proxy: proxySectionSchema.default("auto"),
   runtime: z.enum(["auto", "mise", "system"]).default("auto"),
   port: z.number().int().min(1024).max(65535).optional(),
