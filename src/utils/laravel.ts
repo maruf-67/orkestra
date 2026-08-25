@@ -94,6 +94,26 @@ export async function syncLaravelProject(
             }
           }
 
+          // If reverbPort is configured and this is a concurrently command without reverb:start, inject it
+          if (options.reverbPort && updated.includes("concurrently") && !updated.includes("reverb:start")) {
+            const reverbCmd = `"php artisan reverb:start --host=0.0.0.0 --port=${options.reverbPort}"`;
+            // Insert reverbCmd after octane:start or at the beginning of commands
+            if (updated.includes("octane:start")) {
+              updated = updated.replace(/(["']php artisan octane:start[^"']*["'])/, `$1 ${reverbCmd}`);
+              if (updated.includes("--names=")) {
+                updated = updated.replace(/--names=([^\s]+)/, (match, names) => {
+                  const parts = names.split(",");
+                  if (!parts.includes("reverb")) {
+                    const insertIdx = parts.indexOf("octane") !== -1 ? parts.indexOf("octane") + 1 : 1;
+                    parts.splice(insertIdx, 0, "reverb");
+                  }
+                  return `--names=${parts.join(",")}`;
+                });
+              }
+              changed = true;
+            }
+          }
+
           return updated;
         };
 
