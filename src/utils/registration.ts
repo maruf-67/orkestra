@@ -19,6 +19,7 @@ export interface RegistrationOptions {
   port?: number;
   proxy?: string;
   skipPrompts?: boolean;
+  skipLaravelSync?: boolean;
 }
 
 export interface RegistrationResult {
@@ -169,12 +170,12 @@ export async function registerProjectAuto(
   // Add allowed host for Vite/Nuxt
   await addAllowedHost(projectDir, domain);
 
-  // Sync Laravel project files (composer.json, .rr.yaml, .env, pnpm-workspace.yaml)
+  // Sync Laravel project files (composer.json, .rr.yaml, .env) — skip when caller (init) will sync with reverb
   const isLaravel =
     framework?.name?.toLowerCase() === "laravel" ||
     existsSync(join(projectDir, "artisan"));
 
-  if (isLaravel) {
+  if (isLaravel && !options?.skipLaravelSync) {
     await syncLaravelProject(projectDir, {
       port,
       domain,

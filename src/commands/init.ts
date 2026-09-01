@@ -56,13 +56,11 @@ export async function init(options: InitOptions) {
     log.dim("Install pnpm, npm, yarn, or bun");
   }
 
-  // Generate defaults
+  // Generate defaults — respect explicit --port/--domain (no drift from stale files)
   const projectName = basename(projectDir);
   const defaultDomain = `${projectName}.dev.com`;
-  const defaultPort =
-    (await detectPortFromProject(projectDir, framework?.name || "")) ||
-    framework?.port ||
-    3000;
+  const detectedPort = options.port ? null : await detectPortFromProject(projectDir, framework?.name || "");
+  const defaultPort = detectedPort || framework?.port || 3000;
 
   // ─────────────────────────────────────────────
   // Phase 1: Standard project prompts
@@ -237,6 +235,7 @@ export async function init(options: InitOptions) {
       port,
       proxy: options.proxy,
       skipPrompts: options.yes,
+      skipLaravelSync: true,
     });
 
     regSpin.succeed("Project registered successfully!");

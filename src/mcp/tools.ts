@@ -16,6 +16,8 @@ import { providerRegistry } from "../deployment/providers/registry.js";
 import { resolveBinaries } from "../services/mise-resolver.js";
 import { detectDatabases } from "../detection/database.js";
 import { resolve, basename } from "node:path";
+import { runSecurityScan } from "../security/scanner.js";
+import { readAudit, auditSummary } from "../security/audit.js";
 
 export interface McpToolDefinition {
   name: string;
@@ -128,6 +130,38 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         dir: { type: "string", description: "Project directory" },
         project: { type: "string", description: "Project name" },
         toCommit: { type: "string", description: "Optional specific commit SHA to checkout" },
+      },
+    },
+  },
+  {
+    name: "orkestra_audit",
+    description: "Full security audit bundle: leak/hardcoded secrets & PII (AWS keys, private keys, passwords, credit cards, BD NID/phone), injection/validation gaps (SQLi, command injection, XSS, missing zod/FormRequest), online CVE via npm audit + composer audit, and appends to audit trail (~/.orkestra/audit.log.jsonl). Use for Orkestra itself and Texel apps.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dir: { type: "string", description: "Project directory (default: cwd)" },
+        noOnline: { type: "boolean", description: "Skip online CVE registry checks" },
+      },
+    },
+  },
+  {
+    name: "orkestra_security_scan",
+    description: "Alias for orkestra_audit — same bundle (secrets/PII + injection + CVE + audit).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dir: { type: "string", description: "Project directory" },
+        noOnline: { type: "boolean", description: "Skip online CVE checks" },
+      },
+    },
+  },
+  {
+    name: "orkestra_audit_history",
+    description: "Read audit trail: last scans and deploy events from ~/.orkestra/audit.log.jsonl.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Max events to return (default 20)" },
       },
     },
   },
@@ -276,6 +310,18 @@ export async function handleMcpToolCall(name: string, args: Record<string, any>)
         project: projectName,
         rolledBackToCommit: targetCommit,
       };
+    }
+
+    case "orkestra_audit":
+    case "orkestra_security_scan": {
+      const targetDir = resolve(args.dir || process.cwd());
+      const report = await runSecurityScan(targetDir, { onlineCve: !args.noOnline });
+      return report;
+    }
+    case "orkestra_audit_history": {
+      const summary = await auditSummary();
+      const recent = await readAudit(args.limit || 20);
+      return { summary, recent };
     }
 
     default:

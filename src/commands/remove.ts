@@ -1,5 +1,5 @@
 import { resolve, join } from "node:path";
-import { unlink, rm } from "node:fs/promises";
+import { unlink, rm, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { log, spinner, heading } from "../utils/logger.js";
@@ -7,7 +7,9 @@ import { HostsFileProvider } from "../providers/hosts/hosts.js";
 import { getProject, unregisterProject } from "../state/store.js";
 import { detectProxy } from "../detection/proxy.js";
 import { run } from "../utils/exec.js";
-import { isWindows } from "../platform/index.js";
+import { isWindows, isLinux } from "../platform/index.js";
+import { systemd } from "../services/systemd.js";
+import { parse as parseYaml } from "yaml";
 
 interface RemoveOptions {
   dir?: string;
@@ -26,30 +28,58 @@ export async function remove(options: RemoveOptions) {
 
   log.info(`Removing: ${project.name} (${project.domain})`);
 
-  // 1. Remove from hosts
+  // 1. Remove from hosts (main + any reverb domains in yml/state)
   const hostsSpin = spinner("Updating hosts file...");
   hostsSpin.start();
   const hosts = new HostsFileProvider();
   await hosts.remove(project.domain);
+  // also clean reverb domains if present in .orkestra.yml
+  for (const rd of await collectReverbDomains(projectDir, project)) {
+    await hosts.remove(rd);
+  }
   hostsSpin.succeed(`Removed ${project.domain} from hosts file`);
 
-  // 2. Remove from proxy (Caddy config)
+  // 2. Remove from proxy (Caddy config) — main + reverb domains
   if (project.proxy !== "none") {
     const proxySpin = spinner("Removing proxy config...");
     proxySpin.start();
     const proxy = await detectProxy(project.proxy);
     if (proxy) {
       await proxy.unregister(project.domain);
-      proxySpin.succeed("Proxy config removed");
+      for (const rd of await collectReverbDomains(projectDir, project)) {
+        await proxy.unregister(rd);
+      }
+      proxySpin.succeed("Proxy config removed (including Reverb)");
     } else {
       proxySpin.fail("Proxy not found, skipping proxy cleanup");
     }
   }
 
-  // 3. Remove SSL certificates
+  // 2b. Remove systemd services (production) — orkestra-<name>-*.service
+  if (isLinux()) {
+    const svcSpin = spinner("Removing systemd services...");
+    svcSpin.start();
+    const svcTypes: Array<"octane" | "queue" | "reverb" | "web"> = ["octane", "queue", "reverb", "web"];
+    let svcCleaned = 0;
+    for (const t of svcTypes) {
+      const svc = systemd.getServiceName(project.name, t as any);
+      // best-effort stop/disable/rm even if not active
+      try { await run("systemctl", ["stop", svc], { sudo: true }); } catch {}
+      try { await run("systemctl", ["disable", svc], { sudo: true }); } catch {}
+      try { await run("rm", ["-f", join("/etc/systemd/system", svc)], { sudo: true }); svcCleaned++; } catch {}
+    }
+    try { await run("systemctl", ["daemon-reload"], { sudo: true }); } catch {}
+    try { await run("systemctl", ["reset-failed"], { sudo: true }); } catch {}
+    svcSpin.succeed(svcCleaned ? `Systemd services removed (${svcCleaned} units)` : "No systemd services to remove");
+  }
+
+  // 3. Remove SSL certificates (main + reverb)
   const certSpin = spinner("Removing certificates...");
   certSpin.start();
-  const certsRemoved = await removeCerts(project.domain);
+  let certsRemoved = await removeCerts(project.domain);
+  for (const rd of await collectReverbDomains(projectDir, project)) {
+    if (await removeCerts(rd)) certsRemoved = true;
+  }
   certSpin.succeed(certsRemoved ? "Certificates removed" : "No certificates to remove");
 
   // 4. Remove log files
@@ -98,6 +128,23 @@ async function removeLogs(projectDir: string, _projectName: string): Promise<boo
   } catch {
     return false;
   }
+}
+
+async function collectReverbDomains(projectDir: string, project: any): Promise<string[]> {
+  const out: string[] = [];
+  // from .orkestra.yml services.reverb.domain or reverbDomain
+  try {
+    const ymlPath = join(projectDir, ".orkestra.yml");
+    if (existsSync(ymlPath)) {
+      const raw = await readFile(ymlPath, "utf-8");
+      const yml: any = parseYaml(raw);
+      if (yml?.services?.reverb?.domain) out.push(String(yml.services.reverb.domain));
+      if (yml?.reverbDomain) out.push(String(yml.reverbDomain));
+    }
+  } catch {}
+  // from project state metadata if present
+  if (project?.reverbDomain) out.push(String(project.reverbDomain));
+  return [...new Set(out.filter(Boolean))];
 }
 
 async function removeCerts(domain: string): Promise<boolean> {
