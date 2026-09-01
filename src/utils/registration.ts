@@ -126,13 +126,24 @@ export async function registerProjectAuto(
   // Resolve domain
   const domain = options?.domain || config?.domain || `${projectName}.dev.com`;
 
-  // Resolve port
+  // Resolve port — if explicit --port given, use it verbatim (no bump even if OS shows in-use; same-project restart will free it)
   let port = options?.port || config?.port;
   if (!port) {
     const detectedPort = await detectPortFromProject(projectDir, framework?.name || "");
     port = detectedPort || framework?.port || 3000;
   }
-  port = await findAvailablePort(port, projectDir);
+  if (options?.port) {
+    // explicit request — only check allocation to *other* projects, skip OS availability bump
+    const { isPortAllocated } = await import("../state/store.js");
+    if (await isPortAllocated(port)) {
+      const cur = await (await import("../state/store.js")).getProject(projectDir);
+      if (!cur || cur.port !== port) {
+        port = await findAvailablePort(port, projectDir);
+      }
+    }
+  } else {
+    port = await findAvailablePort(port, projectDir);
+  }
 
   // Add to hosts file
   const hosts = new HostsFileProvider();
