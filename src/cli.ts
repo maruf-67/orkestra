@@ -26,6 +26,7 @@ import { rollback } from "./commands/rollback.js";
 import { monitor } from "./commands/monitor.js";
 import { inspect } from "./commands/inspect.js";
 import { mcp } from "./commands/mcp.js";
+import { audit, security } from "./commands/audit.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -101,6 +102,25 @@ export function run() {
     .command("mcp")
     .description("Start the Model Context Protocol (MCP) server for AI assistants")
     .action(mcp);
+
+  program
+    .command("audit")
+    .description("Security bundle: secrets/PII leaks, validation/SQLi/XSS, CVE (npm/composer online), audit trail")
+    .option("-d, --dir <path>", "Project directory (default: cwd)")
+    .option("--json", "Machine-readable JSON output")
+    .option("--no-online", "Skip online CVE registry checks")
+    .option("--history", "Show audit trail (last scans)")
+    .option("--limit <n>", "History limit", parseInt)
+    .action(audit);
+
+  program
+    .command("security")
+    .description("Alias for audit — full security bundle")
+    .option("-d, --dir <path>", "Project directory")
+    .option("--json", "Machine-readable JSON output")
+    .option("--no-online", "Skip online CVE checks")
+    .option("--history", "Show audit trail")
+    .action(security);
 
   program
     .command("check")
