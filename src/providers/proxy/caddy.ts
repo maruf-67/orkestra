@@ -64,17 +64,28 @@ export class CaddyProxy implements ProxyProvider {
 `;
   }
 
+  private escapeDomain(domain: string): string {
+    return domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  private domainBlockRegex(domain: string): RegExp {
+    const esc = this.escapeDomain(domain);
+    // Exact: start-of-line (or start-of-file) optional whitespace, optional http(s)://, domain, whitespace, {
+    // Handles `texelbd.com {` , `http://texelbd.com {` , `api.texelbd.com {`
+    return new RegExp(`^\\s*(?:https?:\\/\\/)?${esc}\\s*\\{[^}]*\\}\\s*`, "gm");
+  }
+
+  private hasDomain(config: string, domain: string): boolean {
+    return this.domainBlockRegex(domain).test(config);
+  }
+
   async register(config: ProxyConfig): Promise<void> {
     const existing = await this.readConfig();
     const block = this.generateBlock(config);
 
-    if (existing.includes(config.domain)) {
-      const blockRegex = new RegExp(
-        `${config.domain.replace(/\./g, "\\.")}\\s*\\{[^}]*\\}`,
-        "g"
-      );
-      const newConfig = existing.replace(blockRegex, block.trim());
-      await this.writeConfig(newConfig);
+    if (this.hasDomain(existing, config.domain)) {
+      const newConfig = existing.replace(this.domainBlockRegex(config.domain), block);
+      await this.writeConfig(newConfig.trimEnd() + "\n");
     } else {
       const separator = existing.trim() ? "\n\n" : "";
       await this.writeConfig(existing.trim() + separator + block);
@@ -88,32 +99,24 @@ export class CaddyProxy implements ProxyProvider {
 
     for (const config of configs) {
       const block = this.generateBlock(config);
-      if (currentConfig.includes(config.domain)) {
-        const blockRegex = new RegExp(
-          `${config.domain.replace(/\./g, "\\.")}\\s*\\{[^}]*\\}`,
-          "g"
-        );
-        currentConfig = currentConfig.replace(blockRegex, block.trim());
+      if (this.hasDomain(currentConfig, config.domain)) {
+        currentConfig = currentConfig.replace(this.domainBlockRegex(config.domain), block);
       } else {
         const separator = currentConfig.trim() ? "\n\n" : "";
         currentConfig = currentConfig.trim() + separator + block;
       }
     }
 
-    await this.writeConfig(currentConfig);
+    await this.writeConfig(currentConfig.trimEnd() + "\n");
     await this.reload();
   }
 
   async unregister(domain: string): Promise<void> {
     const existing = await this.readConfig();
-    if (!existing.includes(domain)) return;
+    if (!this.hasDomain(existing, domain)) return;
 
-    const blockRegex = new RegExp(
-      `${domain.replace(/\./g, "\\.")}\\s*\\{[^}]*\\}\\n?`,
-      "g"
-    );
-    const newConfig = existing.replace(blockRegex, "").trim();
-    await this.writeConfig(newConfig + "\n");
+    const newConfig = existing.replace(this.domainBlockRegex(domain), "").trim();
+    await this.writeConfig(newConfig ? newConfig + "\n" : "");
     await this.reload();
   }
 
