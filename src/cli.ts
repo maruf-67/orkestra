@@ -21,6 +21,7 @@ import { completions } from "./commands/completions.js";
 import { check } from "./commands/check.js";
 import { share } from "./commands/share.js";
 import { deploy } from "./commands/deploy.js";
+import { redeploy } from "./commands/redeploy.js";
 import { services } from "./commands/services.js";
 import { rollback } from "./commands/rollback.js";
 import { monitor } from "./commands/monitor.js";
@@ -75,6 +76,17 @@ export function run() {
     .option("--remote <host>", "Remote SSH server host to deploy to")
     .option("-y, --yes", "Skip interactive prompts")
     .action(deploy);
+
+  program
+    .command("redeploy")
+    .description("Redeploy without port/Caddy changes: git pull → install (composer/bun) → Laravel o:clear/optimize → restart, Node stop→build→restart")
+    .option("-d, --dir <path>", "Project directory")
+    .option("-b, --branch <branch>", "Git branch (default: main/.orkestra.yml)")
+    .option("--strategy <strategy>", "Git strategy: reset or pull (default: reset)")
+    .option("-y, --yes", "Skip interactive prompts")
+    .option("--skip-build", "Node: skip build, only restart")
+    .option("--skip-optimize", "Laravel: skip optimize:clear/optimize")
+    .action(redeploy);
 
   program
     .command("services")

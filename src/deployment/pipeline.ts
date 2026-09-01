@@ -153,6 +153,51 @@ export class DeploymentPipeline {
         throw err;
       }
 
+      // Preserve deployed port/domain after git reset — .orkestra.yml may revert to repo default
+      const existingProject = await getProject(projectDir);
+      if (existingProject) {
+        const freshConfig = await loadConfig(projectDir);
+        if (freshConfig) {
+          let mutated = false;
+          const stateDomain = existingProject.domain;
+          const statePort = existingProject.port;
+          // Domain drift guard
+          if (freshConfig.domain && freshConfig.domain !== stateDomain) {
+            log.warn(`Config domain ${freshConfig.domain} differs from deployed ${stateDomain} — preserving deployed domain.`);
+            freshConfig.domain = stateDomain;
+            mutated = true;
+          } else if (!freshConfig.domain && stateDomain) {
+            freshConfig.domain = stateDomain;
+            mutated = true;
+          }
+          if (freshConfig.port && freshConfig.port !== statePort) {
+            log.warn(`Config port ${freshConfig.port} differs from deployed ${statePort} — preserving deployed port.`);
+            freshConfig.port = statePort;
+            mutated = true;
+          } else if (!freshConfig.port && statePort) {
+            freshConfig.port = statePort;
+            mutated = true;
+          }
+          // Reverb port/domain drift guard
+          const reverbState = (existingProject as any).reverbPort as number | undefined;
+          if (reverbState && freshConfig.reverbPort !== reverbState) {
+            freshConfig.reverbPort = reverbState;
+            mutated = true;
+          }
+          if (mutated) {
+            // Update in-memory config used by providers; do not overwrite file (git-controlled)
+            context.config = freshConfig;
+            report.proxy.apiDomain = freshConfig.domain;
+            report.proxy.apiPort = freshConfig.port;
+          } else {
+            context.config = freshConfig;
+          }
+        } else if (existingProject) {
+          // No config after reset (deleted) — keep state in context for providers
+          context.config = { ...config, domain: existingProject.domain, port: existingProject.port } as any;
+        }
+      }
+
       // Step 3: Install Dependencies
       const depSpin = spinner(`Installing dependencies (${detection.packageManager})...`);
       depSpin.start();
