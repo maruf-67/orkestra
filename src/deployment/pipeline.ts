@@ -153,7 +153,7 @@ export class DeploymentPipeline {
         throw err;
       }
 
-      // Preserve deployed port/domain after git reset — .orkestra.yml may revert to repo default
+      // Preserve deployed port/domain/reverb after git reset — .orkestra.yml may revert to repo default
       const existingProject = await getProject(projectDir);
       if (existingProject) {
         const freshConfig = await loadConfig(projectDir);
@@ -178,14 +178,32 @@ export class DeploymentPipeline {
             freshConfig.port = statePort;
             mutated = true;
           }
-          // Reverb port/domain drift guard
-          const reverbState = (existingProject as any).reverbPort as number | undefined;
-          if (reverbState && freshConfig.reverbPort !== reverbState) {
-            freshConfig.reverbPort = reverbState;
+          // Reverb drift guard — prefer state, then pre-sync config, then keep fresh
+          const preSyncReverbPort = (config as any)?.reverbPort as number | undefined;
+          const preSyncReverbDomain = (config as any)?.reverbDomain as string | undefined;
+          const stateReverbPort = existingProject.reverbPort;
+          const stateReverbDomain = existingProject.reverbDomain;
+          const targetReverbPort = stateReverbPort ?? preSyncReverbPort;
+          const targetReverbDomain = stateReverbDomain ?? preSyncReverbDomain;
+          if (targetReverbPort && freshConfig.reverbPort !== targetReverbPort) {
+            if (freshConfig.reverbPort) log.warn(`Config reverbPort ${freshConfig.reverbPort} differs from deployed ${targetReverbPort} — preserving.`);
+            (freshConfig as any).reverbPort = targetReverbPort;
+            mutated = true;
+          }
+          if (targetReverbDomain && freshConfig.reverbDomain !== targetReverbDomain) {
+            (freshConfig as any).reverbDomain = targetReverbDomain;
+            mutated = true;
+          }
+          // Also sync services.reverb if present
+          if (targetReverbPort && (freshConfig as any).services?.reverb && (freshConfig as any).services.reverb.port !== targetReverbPort) {
+            (freshConfig as any).services.reverb.port = targetReverbPort;
+            mutated = true;
+          }
+          if (targetReverbDomain && (freshConfig as any).services?.reverb && (freshConfig as any).services.reverb.domain !== targetReverbDomain) {
+            (freshConfig as any).services.reverb.domain = targetReverbDomain;
             mutated = true;
           }
           if (mutated) {
-            // Update in-memory config used by providers; do not overwrite file (git-controlled)
             context.config = freshConfig;
             report.proxy.apiDomain = freshConfig.domain;
             report.proxy.apiPort = freshConfig.port;
@@ -193,8 +211,7 @@ export class DeploymentPipeline {
             context.config = freshConfig;
           }
         } else if (existingProject) {
-          // No config after reset (deleted) — keep state in context for providers
-          context.config = { ...config, domain: existingProject.domain, port: existingProject.port } as any;
+          context.config = { ...config, domain: existingProject.domain, port: existingProject.port, reverbPort: (config as any)?.reverbPort ?? existingProject.reverbPort, reverbDomain: (config as any)?.reverbDomain ?? existingProject.reverbDomain } as any;
         }
       }
 
@@ -289,7 +306,8 @@ export class DeploymentPipeline {
           );
 
           const primary = proxyDefs[0];
-          const existingProject = await getProject(projectDir);
+          const existingProject2 = await getProject(projectDir);
+          const reverbDef = proxyDefs.find((p) => p.websocket);
 
           await registerProject({
             name: projectName,
@@ -298,7 +316,9 @@ export class DeploymentPipeline {
             framework: detection.framework,
             proxy: "caddy",
             path: projectDir,
-            registeredAt: existingProject?.registeredAt || new Date().toISOString(),
+            registeredAt: existingProject2?.registeredAt || new Date().toISOString(),
+            reverbPort: reverbDef?.port ?? (context.config as any)?.reverbPort ?? existingProject2?.reverbPort,
+            reverbDomain: reverbDef?.domain ?? (context.config as any)?.reverbDomain ?? existingProject2?.reverbDomain,
           });
 
           report.proxy = {

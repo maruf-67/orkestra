@@ -107,13 +107,20 @@ export async function redeploy(options: RedeployOptions) {
     try {
       const gitRes = await syncGitBranch(projectDir, initialBranch, strategy);
       gitSpin.succeed(`Git synced ${gitRes.currentCommit.substring(0,7)}`);
-      // Reload config after reset, but keep frozen port/domain
+      // Reload config after reset, but keep frozen port/domain/reverb
       const fresh = await loadConfig(projectDir);
       if (fresh) {
         const merged: any = { ...fresh, domain: existing.domain, port: existing.port };
-        // Preserve reverb identifiers from previous if missing
-        if (!merged.reverbDomain) merged.reverbDomain = (frozenBase as any).reverbDomain;
-        if (!merged.reverbPort) merged.reverbPort = (frozenBase as any).reverbPort;
+        const frozenReverbPort = (frozenBase as any).reverbPort ?? existing.reverbPort;
+        const frozenReverbDomain = (frozenBase as any).reverbDomain ?? existing.reverbDomain;
+        if (!merged.reverbDomain) merged.reverbDomain = frozenReverbDomain;
+        if (!merged.reverbPort) merged.reverbPort = frozenReverbPort;
+        // also preserve services.reverb if fresh lost it
+        if (frozenReverbPort && merged.services?.reverb && !merged.services.reverb.port) merged.services.reverb.port = frozenReverbPort;
+        if (frozenReverbDomain && merged.services?.reverb && !merged.services.reverb.domain) merged.services.reverb.domain = frozenReverbDomain;
+        // If still missing, try reading existing systemd unit (last known deployed port)
+        if (!merged.reverbPort && existing.reverbPort) merged.reverbPort = existing.reverbPort;
+        if (!merged.reverbDomain && existing.reverbDomain) merged.reverbDomain = existing.reverbDomain;
         context.config = merged;
         config = merged;
       } else {

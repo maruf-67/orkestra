@@ -13,6 +13,8 @@ export interface ProjectState {
   registeredAt: string;
   pid?: number;
   startedAt?: string;
+  reverbPort?: number;
+  reverbDomain?: string;
 }
 
 export interface State {
