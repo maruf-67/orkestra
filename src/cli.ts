@@ -184,7 +184,7 @@ export function run() {
 
   program
     .command("down")
-    .description("Stop dev server")
+    .description("Stop dev server or pause deployed systemd services (octane/web/queue/reverb)")
     .option("-d, --dir <path>", "Project directory")
     .option("-p, --project <name>", "Project name (lookup from state)")
     .option("-a, --all", "Stop all running servers")

@@ -1,9 +1,11 @@
 import { resolve } from "node:path";
 import { log, spinner, heading } from "../utils/logger.js";
-import { getProject, setProjectStopped, isProcessAlive } from "../state/store.js";
-import { isWindows } from "../platform/index.js";
+import { getProject, setProjectStopped, isProcessAlive, listProjects } from "../state/store.js";
+import { isWindows, isLinux } from "../platform/index.js";
 import { run } from "../utils/exec.js";
 import { cleanupLaravelProcesses } from "../utils/laravel.js";
+import { systemd } from "../services/systemd.js";
+import type { ServiceType } from "../services/systemd.js";
 
 interface DownOptions {
   dir?: string;
@@ -67,35 +69,59 @@ async function killProcessTree(pid: number): Promise<void> {
   }
 }
 
+async function stopDeployedServices(projectName: string): Promise<number> {
+  if (!isLinux()) return 0;
+  const types: ServiceType[] = ["octane", "web", "queue", "reverb"];
+  let stopped = 0;
+  for (const t of types) {
+    const svc = systemd.getServiceName(projectName, t);
+    try {
+      if (await systemd.isActive(svc)) {
+        await systemd.stop(svc);
+        log.success(`Stopped systemd ${svc}`);
+        stopped++;
+      } else {
+        // Try stopping anyway — unit may exist but inactive (idempotent)
+        const st = await systemd.getStatus(svc);
+        if (st !== "unknown") {
+          await systemd.stop(svc);
+        }
+      }
+    } catch {}
+  }
+  return stopped;
+}
+
 export async function down(options: DownOptions) {
-  heading("Stop Dev Server");
+  heading("Stop Server");
 
   if (options.all) {
-    // Stop all running servers
-    const { listProjects } = await import("../state/store.js");
     const projects = await listProjects();
-    const running = projects.filter((p) => p.pid);
-
-    if (running.length === 0) {
-      log.info("No running servers.");
+    if (projects.length === 0) {
+      log.info("No projects registered.");
       return;
     }
 
-    let stopped = 0;
-    for (const project of running) {
+    let stoppedDev = 0;
+    let stoppedDeployed = 0;
+    for (const project of projects) {
+      // Dev (pid) servers
       if (project.pid && await isProcessAlive(project.pid)) {
         await killProcessTree(project.pid);
         await cleanupLaravelProcesses(project.path, project.port);
         await setProjectStopped(project.path);
-        log.success(`Stopped ${project.name} (PID: ${project.pid})`);
-        stopped++;
-      } else {
+        log.success(`Stopped dev ${project.name} (PID: ${project.pid})`);
+        stoppedDev++;
+      } else if (project.pid) {
         await cleanupLaravelProcesses(project.path, project.port);
         await setProjectStopped(project.path);
       }
+      // Deployed (systemd) services — always attempt
+      stoppedDeployed += await stopDeployedServices(project.name);
     }
 
-    log.success(`Stopped ${stopped} server(s).`);
+    if (stoppedDev === 0 && stoppedDeployed === 0) log.info("No running servers (dev or deployed).");
+    else log.success(`Stopped ${stoppedDev} dev + ${stoppedDeployed} systemd service(s). Use 'orkestra up' for dev or 'orkestra deploy/redeploy' to restart deployed.`);
     return;
   }
 
@@ -124,28 +150,39 @@ export async function down(options: DownOptions) {
     process.exit(1);
   }
 
-  if (!project.pid) {
-    log.info(`No server running for ${project.name}.`);
+  let didStop = false;
+
+  // 1. Dev server (pid) if running
+  if (project.pid) {
+    if (await isProcessAlive(project.pid)) {
+      const spin = spinner(`Stopping dev ${project.name} (PID: ${project.pid})...`);
+      spin.start();
+      try {
+        await killProcessTree(project.pid);
+        await cleanupLaravelProcesses(projectDir, project.port);
+        await setProjectStopped(projectDir);
+        spin.succeed(`Stopped dev ${project.name}`);
+        didStop = true;
+      } catch (error) {
+        spin.fail(`Failed to stop dev server: ${error}`);
+      }
+    } else {
+      log.info(`Dev server already stopped (stale PID: ${project.pid}).`);
+      await setProjectStopped(projectDir);
+    }
+  }
+
+  // 2. Deployed systemd services (octane/web/queue/reverb) — this is what 'pause' means for production
+  const sysStopped = await stopDeployedServices(project.name);
+  if (sysStopped > 0) didStop = true;
+
+  if (!didStop && !project.pid) {
+    log.info(`No dev server running for ${project.name}. Checked systemd — ${sysStopped > 0 ? `stopped ${sysStopped} service(s)` : "no active deployed services"}.`);
+    if (sysStopped === 0) log.dim("Deployed services are already stopped. Restart with: orkestra redeploy -y or orkestra deploy -y");
     return;
   }
-
-  if (!await isProcessAlive(project.pid)) {
-    log.info(`Server already stopped (stale PID: ${project.pid}).`);
-    await setProjectStopped(projectDir);
-    return;
-  }
-
-  const spin = spinner(`Stopping ${project.name} (PID: ${project.pid})...`);
-  spin.start();
-
-  try {
-    await killProcessTree(project.pid);
-    await cleanupLaravelProcesses(projectDir, project.port);
-    await setProjectStopped(projectDir);
-    spin.succeed(`Stopped ${project.name}`);
-  } catch (error) {
-    spin.fail(`Failed to stop server: ${error}`);
-  }
+  if (sysStopped > 0) log.success(`Paused ${sysStopped} deployed service(s) for ${project.name}. Resume with: orkestra redeploy -y`);
+  else if (didStop) log.success(`Stopped ${project.name}`);
 
   // Fallback: kill anything still listening on the project's port
   if (project.port) {
