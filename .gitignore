@@ -8,3 +8,5 @@ Thumbs.db
 coverage/
 .mimocode/
 .mcp.json
+graphify-out/
+.ai/
