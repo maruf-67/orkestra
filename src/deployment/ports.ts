@@ -29,9 +29,22 @@ function proxySection(config?: OrkestraConfig | null) {
   return typeof config?.proxy === "object" ? config.proxy : undefined;
 }
 
+/**
+ * First candidate that is a usable TCP port.
+ *
+ * The range is 1-65535, deliberately including privileged ports. An earlier
+ * version rejected anything below 1024, which meant a configured `port: 443`
+ * (a perfectly normal thing to want behind another proxy) was silently
+ * discarded and replaced with 8000 — the same silent-substitution failure this
+ * module exists to prevent. Rejecting a value the operator explicitly asked for
+ * is worse than letting systemd report that it cannot bind it.
+ *
+ * Only genuinely nonsensical values are dropped: non-integers, and numbers
+ * outside the TCP range.
+ */
 function firstPort(...candidates: Array<number | undefined | null>): number | undefined {
   for (const c of candidates) {
-    if (typeof c === "number" && Number.isInteger(c) && c >= 1024 && c <= 65535) {
+    if (typeof c === "number" && Number.isInteger(c) && c >= 1 && c <= 65535) {
       return c;
     }
   }
@@ -51,8 +64,29 @@ export function freezeAgainstState(
 ): OrkestraConfig | null {
   if (!config || !state) return config ?? null;
 
-  const merged: OrkestraConfig = { ...config };
-  const mutable = merged as Record<string, any>;
+  // Copy every branch that is about to be written to. A shallow `{ ...config }`
+  // is not enough: `merged.services` would still be the caller's object, so
+  // assigning `services.reverb.port` below would silently rewrite the config the
+  // caller passed in. That matters because the same config object is later read
+  // and written back to `.orkestra.yml`, so frozen deploy values would leak into
+  // the repository file and then get reverted by the next `git reset --hard`.
+  const merged: OrkestraConfig = {
+    ...config,
+    services: config.services
+      ? {
+          ...config.services,
+          ...(config.services.reverb ? { reverb: { ...config.services.reverb } } : {}),
+        }
+      : config.services,
+    proxy:
+      typeof config.proxy === "object" && config.proxy
+        ? {
+            ...config.proxy,
+            ...(config.proxy.api ? { api: { ...config.proxy.api } } : {}),
+            ...(config.proxy.realtime ? { realtime: { ...config.proxy.realtime } } : {}),
+          }
+        : config.proxy,
+  };
   const services = merged.services;
   const proxy = proxySection(merged);
 
@@ -78,8 +112,6 @@ export function freezeAgainstState(
     if (typeof state.reverbPort === "number") proxy.realtime.port = state.reverbPort;
   }
 
-  // `mutable` retained for future structured overrides without a cast at each site.
-  void mutable;
   return merged;
 }
 
@@ -127,11 +159,13 @@ export function resolvePorts(
       DEFAULT_REVERB_PORT
     ) ?? DEFAULT_REVERB_PORT;
 
+  // The API domain must never fall back to the Reverb domain. Doing so pointed
+  // the public HTTP endpoint at the WebSocket host whenever only a realtime
+  // domain was configured, which silently served the API from the wrong vhost.
   const apiDomain =
     state?.domain ??
     proxy?.api?.domain ??
     cfg?.domain ??
-    cfg?.services?.reverb?.domain ??
     `${projectName}.dev.com`;
 
   const reverbDomain =

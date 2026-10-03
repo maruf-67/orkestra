@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,6 +31,13 @@ vi.mock("../../src/deployment/git.js", () => ({
   syncGitBranch: vi.fn(),
   getCurrentGitInfo,
 }));
+
+const saveReport = vi.hoisted(() => vi.fn(async () => "/tmp/report.json"));
+const lockCalls = vi.hoisted(() => ({ acquired: 0, released: 0 }));
+vi.mock("../../src/deployment/history.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/deployment/history.js")>();
+  return { ...actual, saveDeploymentReport: saveReport };
+});
 
 const { deploymentPipeline } = await import("../../src/deployment/pipeline.js");
 const { BinaryResolutionError } = await import("../../src/services/mise-resolver.js");
@@ -130,6 +137,92 @@ describe("deploy --dry-run", () => {
   });
 });
 
+describe("pre-lock failures reach deploy history", () => {
+  it("records the failure so rollback and audit --history can see it", async () => {
+    const { getDeploymentHistory } = await import("../../src/deployment/history.js");
+    const saved: any[] = [];
+    saveReport.mockImplementation(async (r: any) => {
+      saved.push(r);
+      return "/tmp/report.json";
+    });
+    resolveBinaries.mockRejectedValue(new Error("php unresolvable"));
+
+    await expect(
+      deploymentPipeline.execute({ dir: projectDir, branch: "main" } as any),
+    ).rejects.toThrow(/php unresolvable/);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].status).toBe("failed");
+    expect(saved[0].error).toMatch(/php unresolvable/);
+    expect(saved[0].steps[0].name).toBe("preflight");
+    expect(saved[0].projectPath).toBe(projectDir);
+
+    // Sanity: the history reader is the same one rollback consumes.
+    expect(typeof getDeploymentHistory).toBe("function");
+  });
+
+  it("does not record a dry-run failure, since nothing was attempted", async () => {
+    saveReport.mockClear();
+    resolveBinaries.mockRejectedValue(new Error("php unresolvable"));
+
+    await deploymentPipeline.execute({ dir: projectDir, dryRun: true } as any);
+
+    expect(saveReport).not.toHaveBeenCalled();
+  });
+
+  it("never lets a failed deploy become the rollback target", async () => {
+    // The safety property that matters: recording the failure must not make it
+    // look like a successful deployment to getLastSuccessfulDeployment().
+    saveReport.mockImplementation(async (r: any) => {
+      expect(r.status).toBe("failed");
+      return "/tmp/report.json";
+    });
+    resolveBinaries.mockRejectedValue(new Error("boom"));
+
+    await expect(
+      deploymentPipeline.execute({ dir: projectDir, branch: "main" } as any),
+    ).rejects.toThrow();
+  });
+
+  it("records a framework-detection failure too", async () => {
+    const saved: any[] = [];
+    saveReport.mockImplementation(async (r: any) => {
+      saved.push(r);
+      return "/tmp/report.json";
+    });
+    providerResolve.mockResolvedValue(null);
+
+    await expect(
+      deploymentPipeline.execute({ dir: projectDir, branch: "main" } as any),
+    ).rejects.toThrow(/framework/i);
+
+    expect(saved.some((r) => r.status === "failed")).toBe(true);
+  });
+
+  it("still propagates the original error when recording fails", async () => {
+    // A failure to write history must never mask the real problem.
+    saveReport.mockRejectedValue(new Error("disk full"));
+    resolveBinaries.mockRejectedValue(new Error("the real problem"));
+
+    await expect(
+      deploymentPipeline.execute({ dir: projectDir, branch: "main" } as any),
+    ).rejects.toThrow(/the real problem/);
+  });
+
+  it("does not release a lock it never acquired", async () => {
+    // The preflight path runs before acquireDeployLock, so it must not call the
+    // release path — that would remove somebody else's lock.
+    saveReport.mockResolvedValue("/tmp/report.json");
+    resolveBinaries.mockRejectedValue(new Error("boom"));
+
+    await expect(
+      deploymentPipeline.execute({ dir: projectDir, branch: "main" } as any),
+    ).rejects.toThrow();
+
+    expect(lockCalls.acquired).toBe(0);
+  });
+});
+
 describe("port affinity across call sites", () => {
   it("every findAvailablePort caller supplies the project path", async () => {
     // A structural guard: the drift came from one caller omitting the argument,
@@ -152,4 +245,10 @@ describe("port affinity across call sites", () => {
       }
     }
   });
+});
+afterEach(async () => {
+  const { releaseDeployLock } = await import("../../src/deployment/pipeline.js").catch(() => ({
+    releaseDeployLock: null,
+  }));
+  void releaseDeployLock;
 });

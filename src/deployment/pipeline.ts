@@ -64,30 +64,46 @@ export class DeploymentPipeline {
       steps.push({ name, description, status, durationMs, error });
     };
 
-    const initialGit = await getCurrentGitInfo(projectDir);
-    const resolved = await providerRegistry.resolve(projectDir);
-
-    // Toolchain resolution is strict for a real deploy, because a bare `php`
-    // baked into systemd ExecStart is worse than a refusal. A dry run is the
-    // opposite case: being unable to resolve php is precisely what a preview
-    // exists to report, so it must always render and say what is missing.
+    let initialGit: Awaited<ReturnType<typeof getCurrentGitInfo>> = null;
+    let resolved: Awaited<ReturnType<typeof providerRegistry.resolve>> = null;
     let binaries: ResolvedBinaries;
     let binaryError: string | undefined;
+
     try {
-      binaries = await resolveBinaries(projectDir);
+      initialGit = await getCurrentGitInfo(projectDir);
+      resolved = await providerRegistry.resolve(projectDir);
+
+      // Toolchain resolution is strict for a real deploy, because a bare `php`
+      // baked into systemd ExecStart is worse than a refusal. A dry run is the
+      // opposite case: being unable to resolve php is precisely what a preview
+      // exists to report, so it must always render and say what is missing.
+      try {
+        binaries = await resolveBinaries(projectDir);
+      } catch (err) {
+        if (!options.dryRun) throw err;
+        binaryError = err instanceof Error ? err.message : String(err);
+        binaries = {
+          php: "php",
+          composer: "composer",
+          node: "node",
+          bun: "bun",
+          pnpm: "pnpm",
+          yarn: "yarn",
+          npm: "npm",
+          isMise: false,
+        };
+      }
     } catch (err) {
-      if (!options.dryRun) throw err;
-      binaryError = err instanceof Error ? err.message : String(err);
-      binaries = {
-        php: "php",
-        composer: "composer",
-        node: "node",
-        bun: "bun",
-        pnpm: "pnpm",
-        yarn: "yarn",
-        npm: "npm",
-        isMise: false,
-      };
+      // Failures before the deployment lock used to propagate as a bare throw,
+      // leaving no trace in deploy history. That made the worst failures — an
+      // unresolvable toolchain, an undetectable framework — invisible to
+      // `orkestra rollback` and `orkestra audit --history`, which is exactly
+      // when an operator most wants to see them.
+      await this.recordPreLockFailure(
+        { projectDir, projectName, branch: targetBranch, initialGit },
+        err,
+      );
+      throw err;
     }
 
     const report: DeploymentReport = {
@@ -149,7 +165,14 @@ export class DeploymentPipeline {
     }
 
     if (!resolved) {
-      throw new Error(`Could not determine application framework provider for ${projectDir}`);
+      const err = new Error(
+        `Could not determine application framework provider for ${projectDir}`,
+      );
+      await this.recordPreLockFailure(
+        { projectDir, projectName, branch: targetBranch, initialGit },
+        err,
+      );
+      throw err;
     }
 
     const { provider, detection } = resolved;
@@ -440,6 +463,70 @@ export class DeploymentPipeline {
     }
 
     return report;
+  }
+
+  /**
+   * Persist a deployment failure that happened before the lock was acquired.
+   *
+   * The main try/catch only wraps the steps from "acquire lock" onwards, so
+   * anything that fails earlier — resolving the toolchain, detecting the
+   * framework — used to escape as a bare throw with no history entry. Recording
+   * it here keeps `orkestra rollback` and `orkestra audit --history` complete.
+   *
+   * Best-effort by design: if the report cannot be written the original error
+   * must still propagate, so a failure to record never masks the real problem.
+   */
+  private async recordPreLockFailure(
+    context: {
+      projectDir: string;
+      projectName: string;
+      branch: string;
+      initialGit: { commit?: string; branch?: string } | null;
+    },
+    error: unknown,
+  ): Promise<void> {
+    const message = error instanceof Error ? error.message : String(error);
+    const now = new Date().toISOString();
+
+    const report: DeploymentReport = {
+      projectName: context.projectName,
+      projectPath: context.projectDir,
+      branch: context.branch,
+      commit: context.initialGit?.commit || "HEAD",
+      startedAt: now,
+      finishedAt: now,
+      durationSeconds: 0,
+      status: "failed",
+      steps: [
+        {
+          name: "preflight",
+          description: "Preflight checks (toolchain and framework detection)",
+          status: "failed",
+          durationMs: 0,
+          error: message,
+        },
+      ],
+      capabilities: {
+        isLaravel: false,
+        hasOctane: false,
+        octaneServer: "none",
+        hasReverb: false,
+        hasQueue: false,
+        queueConnection: "redis",
+        hasCaddy: false,
+        hasMise: false,
+      },
+      services: {},
+      proxy: { status: "skipped" },
+      health: {},
+      error: message,
+    };
+
+    try {
+      await saveDeploymentReport(report);
+    } catch {
+      // Recording is best-effort; the caller rethrows the original error.
+    }
   }
 }
 
