@@ -4,7 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getPlatform, isWindows } from "../platform/index.js";
+import { isWindows } from "../platform/index.js";
 
 export interface ExecResult {
   stdout: string;
@@ -17,8 +17,6 @@ export async function run(
   args: string[] = [],
   options: { cwd?: string; env?: Record<string, string>; sudo?: boolean; stdin?: string | "inherit" | "pipe" } = {}
 ): Promise<ExecResult> {
-  const platform = getPlatform();
-
   const execaOpts: any = {
     cwd: options.cwd,
     env: { ...process.env, ...options.env },
@@ -33,7 +31,10 @@ export async function run(
     execaOpts.stdin = options.stdin ?? "inherit";
   }
 
-  // Windows: no sudo, run directly
+  // Windows: no sudo, run directly.
+  //
+  // `shell: true` is required here and only here: Node cannot exec a `.cmd`
+  // shim directly, and npm/bun/gem on Windows are `.cmd` shims.
   if (isWindows()) {
     try {
       const result = await execa(command, args, {
@@ -54,15 +55,28 @@ export async function run(
     }
   }
 
-  // Unix: use sudo if needed
+  // Unix: use sudo if needed.
+  //
+  // No shell. Execa passes `args` as an argv array straight to execve, so
+  // arguments are passed literally. Previously `shell: platform.shell` was set,
+  // which had two consequences:
+  //
+  //  - Correctness: any argument containing a shell metacharacter broke. Real
+  //    example: `git log -1 --format=%an|||%s` failed with
+  //    `/bin/sh: Syntax error: "|" unexpected`, so `getCurrentGitInfo()` silently
+  //    recorded author "unknown" and an empty message for every deployment.
+  //  - Security: arguments are built from project-controlled values (domains,
+  //    project names, paths, service names), so a shell would interpret them.
+  //
+  // Every call site passes a real binary plus an argv array, so nothing depended
+  // on shell expansion. The one place that genuinely wants a shell,
+  // `run("sh", ["-c", ...])` in utils/installer.ts, still works: `sh -c` is how
+  // you ask a shell to run a script.
   const cmd = options.sudo ? "sudo" : command;
   const cmdArgs = options.sudo ? [command, ...args] : args;
 
   try {
-    const result = await execa(cmd, cmdArgs, {
-      ...execaOpts,
-      shell: platform.shell,
-    });
+    const result = await execa(cmd, cmdArgs, execaOpts);
     return {
       stdout: String(result.stdout ?? ""),
       stderr: String(result.stderr ?? ""),
@@ -124,8 +138,9 @@ export async function which(command: string): Promise<string | null> {
       return result.stdout.trim().split("\n")[0];
     }
   } else {
+    // No shell on Unix: `command` is a literal tool name, and execing `which`
+    // directly avoids handing it to a shell parser for no benefit.
     const result = await execa("which", [command], {
-      shell: true,
       reject: false,
     });
     if (result.exitCode === 0) {

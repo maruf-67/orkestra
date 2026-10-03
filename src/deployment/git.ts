@@ -1,4 +1,4 @@
-import { appendFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../utils/exec.js";
@@ -12,23 +12,65 @@ import { run } from "../utils/exec.js";
  */
 const DEPLOY_LOCAL_FILES = [".orkestra.yml"];
 
+/**
+ * Keep deployment-local config out of `git reset --hard`.
+ *
+ * There are two distinct cases and they need different mechanisms:
+ *
+ *  - File is untracked: add it to `.git/info/exclude` so git stops reporting it
+ *    as untracked noise.
+ *  - File is tracked: the exclude file has NO effect — `reset --hard` overwrites
+ *    tracked files regardless. `.orkestra.yml` normally ships in the repository,
+ *    so this is the case that matters. `git update-index --skip-worktree` is the
+ *    mechanism that actually works; verified against a real repository, where the
+ *    host-specific value survives the reset with the flag set and is reverted
+ *    without it.
+ *
+ * `freezeAgainstState()` in deployment/ports.ts is the defence in depth for
+ * ports regardless, since it re-applies the deployed values after the reset.
+ */
 async function ensureResetExemptions(dir: string): Promise<void> {
   const excludePath = join(dir, ".git", "info", "exclude");
-  if (!existsSync(excludePath)) return;
+
+  // Create the exclude file when missing rather than giving up. `git init`
+  // normally writes one, but if it has been removed the protection would
+  // silently vanish.
+  if (!existsSync(excludePath)) {
+    await mkdir(join(dir, ".git", "info"), { recursive: true });
+    await writeFile(excludePath, "", "utf-8").catch(() => {});
+  }
 
   let current = "";
   try {
-    const res = await run("cat", [excludePath], { cwd: dir });
-    if (res.exitCode === 0) current = res.stdout;
-  } catch {}
+    current = await readFile(excludePath, "utf-8");
+  } catch {
+    // Unreadable: fall back to an empty baseline so entries are still added.
+    current = "";
+  }
 
-  const missing = DEPLOY_LOCAL_FILES.filter(
-    (f) => !current.split("\n").some((l) => l.trim() === f)
-  );
-  if (missing.length === 0) return;
+  const present = new Set(current.split("\n").map((l) => l.trim()));
+  const missing = DEPLOY_LOCAL_FILES.filter((f) => !present.has(f));
+  if (missing.length > 0) {
+    const prefix = current.trim() ? `${current.trimEnd()}\n\n` : "";
+    const block = `${prefix}# Added by orkestra: deployment-local config must survive git reset --hard\n${missing.join("\n")}\n`;
+    await appendFile(excludePath, block, "utf-8");
+  }
 
-  const block = `${current.trimEnd()}${current.trim() ? "\n" : ""}\n# Added by orkestra: deployment-local config must survive git reset --hard\n${missing.join("\n")}\n`;
-  await appendFile(excludePath, block, "utf-8");
+  // Tracked deploy-local files additionally need skip-worktree, because the
+  // exclude file above cannot protect them.
+  for (const file of DEPLOY_LOCAL_FILES) {
+    if (!existsSync(join(dir, file))) continue;
+
+    const tracked = await run("git", ["ls-files", "--error-unmatch", file], { cwd: dir });
+    if (tracked.exitCode !== 0) continue; // untracked: exclude already covers it
+
+    const alreadySkipped = await run("git", ["ls-files", "-v", file], { cwd: dir });
+    // `S` marks skip-worktree; `-v` prefixes the tag, so an unmodified tracked
+    // file shows as `H`.
+    if (alreadySkipped.stdout.trim().startsWith("S")) continue;
+
+    await run("git", ["update-index", "--skip-worktree", file], { cwd: dir });
+  }
 }
 
 export interface GitInfo {
