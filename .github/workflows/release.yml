@@ -9,6 +9,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      # Required for npm trusted publishing (OIDC) and harmless when using a
+      # classic NODE_AUTH_TOKEN.
+      id-token: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +42,9 @@ jobs:
         run: pnpm test
 
       - name: Publish to npm
-        run: pnpm publish --no-git-checks
+        # `npm publish` uses the .npmrc written by setup-node (registry-url +
+        # NODE_AUTH_TOKEN). pnpm prefers OIDC trusted publishing, which fails
+        # outright when only a classic token is configured.
+        run: npm publish --provenance=false --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
