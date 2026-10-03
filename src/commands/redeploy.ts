@@ -5,6 +5,7 @@ import { loadConfig } from "../config/loader.js";
 import { providerRegistry } from "../deployment/providers/registry.js";
 import { resolveBinaries } from "../services/mise-resolver.js";
 import { syncGitBranch } from "../deployment/git.js";
+import { freezeAgainstState, resolvePorts } from "../deployment/ports.js";
 import { systemd } from "../services/systemd.js";
 import { getProject } from "../state/store.js";
 import { log, heading, spinner } from "../utils/logger.js";
@@ -52,16 +53,24 @@ export async function redeploy(options: RedeployOptions) {
   }
 
   const projectName = existing.name || basename(projectDir);
-  log.info(`Project:  ${projectName}`);
-  log.info(`Path:     ${projectDir}`);
-  log.info(`Domain:   ${existing.domain} → localhost:${existing.port} (frozen)`);
-  log.dim("Proxy/hosts/ports will NOT be modified.");
+    const ports = resolvePorts(await loadConfig(projectDir), {
+      state: existing,
+      projectName,
+    });
+
+    log.info(`Project:  ${projectName}`);
+    log.info(`Path:     ${projectDir}`);
+    log.info(`Domain:   ${ports.apiDomain} → localhost:${ports.apiPort} (frozen)`);
+    if (existing.reverbPort) {
+      log.info(`Reverb:   ${ports.reverbDomain ?? "(no domain)"} → localhost:${ports.reverbPort} (frozen)`);
+    }
+    log.dim("Proxy/hosts/ports will NOT be modified.");
 
   if (!options.yes) {
     const confirm = await prompts({
       type: "confirm",
       name: "proceed",
-      message: `Redeploy ${projectName} (restart services ${existing.domain}:${existing.port})?`,
+      message: `Redeploy ${projectName} (restart services ${ports.apiDomain}:${ports.apiPort})?`,
       initial: true,
     });
     if (!confirm.proceed) { log.warn("Redeploy aborted."); return; }
@@ -79,9 +88,7 @@ export async function redeploy(options: RedeployOptions) {
     const strategy = options.strategy || (config as any)?.deployment?.strategy || "reset";
 
     // Freeze port/domain from state — never trust .orkestra.yml drift
-    const frozenBase: any = { ...(config || {}) };
-    frozenBase.domain = existing.domain;
-    frozenBase.port = existing.port;
+    const frozenBase = freezeAgainstState(config, existing);
 
     const binaries = await resolveBinaries(projectDir);
     const resolved = await providerRegistry.resolve(projectDir);
@@ -107,25 +114,11 @@ export async function redeploy(options: RedeployOptions) {
     try {
       const gitRes = await syncGitBranch(projectDir, initialBranch, strategy);
       gitSpin.succeed(`Git synced ${gitRes.currentCommit.substring(0,7)}`);
-      // Reload config after reset, but keep frozen port/domain/reverb
-      const fresh = await loadConfig(projectDir);
-      if (fresh) {
-        const merged: any = { ...fresh, domain: existing.domain, port: existing.port };
-        const frozenReverbPort = (frozenBase as any).reverbPort ?? existing.reverbPort;
-        const frozenReverbDomain = (frozenBase as any).reverbDomain ?? existing.reverbDomain;
-        if (!merged.reverbDomain) merged.reverbDomain = frozenReverbDomain;
-        if (!merged.reverbPort) merged.reverbPort = frozenReverbPort;
-        // also preserve services.reverb if fresh lost it
-        if (frozenReverbPort && merged.services?.reverb && !merged.services.reverb.port) merged.services.reverb.port = frozenReverbPort;
-        if (frozenReverbDomain && merged.services?.reverb && !merged.services.reverb.domain) merged.services.reverb.domain = frozenReverbDomain;
-        // If still missing, try reading existing systemd unit (last known deployed port)
-        if (!merged.reverbPort && existing.reverbPort) merged.reverbPort = existing.reverbPort;
-        if (!merged.reverbDomain && existing.reverbDomain) merged.reverbDomain = existing.reverbDomain;
-        context.config = merged;
-        config = merged;
-      } else {
-        context.config = frozenBase;
-      }
+      // Reload config after reset, then freeze deployed values over it so the
+    // in-memory context matches what is actually bound on the host.
+    const fresh = await loadConfig(projectDir);
+    context.config = freezeAgainstState(fresh ?? frozenBase, existing);
+    config = context.config;
     } catch (err: any) {
       gitSpin.fail(`Git sync failed: ${err.message}`);
       throw err;
@@ -187,9 +180,19 @@ export async function redeploy(options: RedeployOptions) {
             phpBinary: binaries.php,
             nodeBinary: binaries.node,
             bunBinary: binaries.bun,
-            octanePort: srv.port,
+            octanePort: srv.type === "octane" ? srv.port : undefined,
+            // Without this the reverb unit template falls back to a hardcoded
+            // 8080 and silently rebinds the WebSocket server.
+            reverbPort: srv.type === "reverb" ? srv.port : undefined,
+            octaneServer: srv.octaneServer,
+            maxRequests: srv.maxRequests,
             queueConnection: srv.queueConnection,
             queues: srv.queues,
+            sleep: srv.queueSleep,
+            tries: srv.queueTries,
+            timeout: srv.queueTimeout,
+            maxJobs: srv.queueMaxJobs,
+            maxTime: srv.queueMaxTime,
           });
           await systemd.restart(systemd.getServiceName(projectName, srv.type));
         }
@@ -245,7 +248,7 @@ export async function redeploy(options: RedeployOptions) {
     }
 
     const dur = ((Date.now() - startTime)/1000).toFixed(1);
-    log.success(`Redeploy done in ${dur}s — ${existing.domain}:${existing.port} unchanged, Caddy untouched.`);
+    log.success(`Redeploy done in ${dur}s — ${ports.apiDomain}:${ports.apiPort} unchanged, Caddy untouched.`);
   } catch (err: any) {
     log.error(err.message || String(err));
     process.exit(1);

@@ -32,8 +32,15 @@ export interface ServiceDefinition {
   command?: string;
   env?: Record<string, string>;
   maxRequests?: number;
+  octaneServer?: string;
   queueConnection?: string;
   queues?: string;
+  /** Queue worker tuning, forwarded to the systemd unit. */
+  queueSleep?: number;
+  queueTries?: number;
+  queueTimeout?: number;
+  queueMaxJobs?: number;
+  queueMaxTime?: number;
 }
 
 export interface ProxyDefinition {

@@ -13,8 +13,9 @@ Welcome to the Orkestra documentation. This folder contains comprehensive guides
 ## For Developers
 
 - **[Architecture](./architecture.md)** — System design and provider model
-- **[Contributing](./contributing.md)** — How to contribute
-- **[Changelog](./changelog.md)** — Version history
+- **[Contributing](../CONTRIBUTING.md)** — How to contribute
+- **[Changelog](../CHANGELOG.md)** — Version history
+- **[Versioning](../VERSIONING.md)** — Branch strategy and release process
 
 ## Quick Links
 

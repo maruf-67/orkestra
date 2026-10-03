@@ -2,6 +2,7 @@ import { log, heading, table } from "../utils/logger.js";
 import { listProjects } from "../state/store.js";
 import { systemd } from "../services/systemd.js";
 import { loadConfig } from "../config/loader.js";
+import { resolvePorts } from "../deployment/ports.js";
 import { OsServiceProvider } from "../providers/service/service.js";
 
 interface ServicesOptions {
@@ -32,6 +33,9 @@ export async function services(options: ServicesOptions) {
 
     for (const p of targetProjects) {
       const config = await loadConfig(p.path);
+      // Resolve against state so the displayed port matches the deployed unit,
+      // not a .orkestra.yml that git reset --hard may have reverted.
+      const ports = resolvePorts(config, { state: p, projectName: p.name });
       const octaneName = systemd.getServiceNameFor(p.name, "octane");
       const webName = systemd.getServiceNameFor(p.name, "web");
       const queueName = systemd.getServiceNameFor(p.name, "queue");
@@ -52,7 +56,7 @@ export async function services(options: ServicesOptions) {
         path: p.path,
         domain: p.domain,
         port: p.port,
-        reverbPort: config?.reverbPort || 8080,
+        reverbPort: ports.reverbPort,
         services: {
           http: {
             type: isOctaneActive || (!isWebActive && octaneSt !== "unknown") ? "octane" : "web",
