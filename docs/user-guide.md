@@ -8,20 +8,41 @@ Complete reference for all Orkestra commands and options.
 |---------|-------------|
 | `orkestra init` | Initialize and register project |
 | `orkestra up` | Start dev server |
-| `orkestra down` | Stop dev server |
+| `orkestra down` | Stop dev server or pause deployed systemd services |
 | `orkestra restart` | Restart dev server |
 | `orkestra status` | Show project status |
 | `orkestra logs` | View server logs |
 | `orkestra shell` | Open shell with env vars |
+| `orkestra start` | Start production server (build + start) |
 | `orkestra remove` | Remove project completely |
 | `orkestra list` | List all projects |
 | `orkestra doctor` | Check system capabilities |
 | `orkestra check` | Validate configuration and check for issues |
+| `orkestra inspect` | Inspect project topology, runtimes, ports, databases |
 | `orkestra open` | Open project in browser |
 | `orkestra db` | Database management |
 | `orkestra env` | Environment variable management |
 | `orkestra docker` | Docker compose management |
+| `orkestra share` | Share project publicly via tunnel |
 | `orkestra completions` | Generate shell completions |
+
+### Production deployment
+
+| Command | Description |
+|---------|-------------|
+| `orkestra deploy` | Full deployment: git sync, dependencies, build, systemd, Caddy, health checks |
+| `orkestra redeploy` | Redeploy without port/Caddy changes: git sync, install, optimize/build, restart |
+| `orkestra services` | Live status of application and system services |
+| `orkestra monitor` | Real-time system, infrastructure, and systemd observability |
+| `orkestra rollback` | Roll back to the previous or a specific commit |
+| `orkestra audit` | Security audit: secrets/PII, injection, CVE |
+| `orkestra security` | Alias for `audit` |
+| `orkestra mcp` | Start the Model Context Protocol server for AI assistants |
+
+> **Port safety.** `deploy` and `redeploy` read the authoritative port and domain
+> from `~/.orkestra/state.json` and preserve them across `git reset --hard`. Both
+> commands also append `.orkestra.yml` to `.git/info/exclude` automatically, so the
+> deployed values can never be reverted to a repository default.
 
 ---
 

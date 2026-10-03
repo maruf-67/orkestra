@@ -10,6 +10,7 @@ import type {
   HealthCheckDefinition,
 } from "../types.js";
 import { run } from "../../../utils/exec.js";
+import { resolvePorts } from "../../ports.js";
 
 export class NextjsProvider implements ApplicationProvider {
   readonly name = "nextjs";
@@ -127,10 +128,10 @@ export class NextjsProvider implements ApplicationProvider {
     context: DeploymentContext,
     _detection: ApplicationDetection
   ): Promise<ServiceDefinition[]> {
-    const port =
-      (typeof context.config?.proxy === "object" ? context.config.proxy.api?.port : undefined) ||
-      context.config?.port ||
-      3000;
+    const { apiPort: port } = resolvePorts(context.config, {
+      projectName: context.projectName,
+      defaultApiPort: 3000,
+    });
 
     const explicitPm = context.config?.deployment?.packageManager || context.config?.packageManager;
     const pm = this.detectPackageManager(context.projectDir, explicitPm);
@@ -161,15 +162,10 @@ export class NextjsProvider implements ApplicationProvider {
     context: DeploymentContext,
     _detection: ApplicationDetection
   ): Promise<ProxyDefinition[]> {
-    const domain =
-      (typeof context.config?.proxy === "object" ? context.config.proxy.api?.domain : undefined) ||
-      context.config?.domain ||
-      `${context.projectName}.dev.com`;
-
-    const port =
-      (typeof context.config?.proxy === "object" ? context.config.proxy.api?.port : undefined) ||
-      context.config?.port ||
-      3000;
+    const { apiDomain: domain, apiPort: port } = resolvePorts(context.config, {
+      projectName: context.projectName,
+      defaultApiPort: 3000,
+    });
 
     return [
       {

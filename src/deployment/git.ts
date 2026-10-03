@@ -1,4 +1,35 @@
+import { appendFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { run } from "../utils/exec.js";
+
+/**
+ * Deployment-local files that must survive `git reset --hard`.
+ *
+ * `.orkestra.yml` records the port/domain actually bound on this host. A
+ * `reset --hard origin/<branch>` reverts it to the repository default, which
+ * then rewrites Caddy and systemd units against the wrong port.
+ */
+const DEPLOY_LOCAL_FILES = [".orkestra.yml"];
+
+async function ensureResetExemptions(dir: string): Promise<void> {
+  const excludePath = join(dir, ".git", "info", "exclude");
+  if (!existsSync(excludePath)) return;
+
+  let current = "";
+  try {
+    const res = await run("cat", [excludePath], { cwd: dir });
+    if (res.exitCode === 0) current = res.stdout;
+  } catch {}
+
+  const missing = DEPLOY_LOCAL_FILES.filter(
+    (f) => !current.split("\n").some((l) => l.trim() === f)
+  );
+  if (missing.length === 0) return;
+
+  const block = `${current.trimEnd()}${current.trim() ? "\n" : ""}\n# Added by orkestra: deployment-local config must survive git reset --hard\n${missing.join("\n")}\n`;
+  await appendFile(excludePath, block, "utf-8");
+}
 
 export interface GitInfo {
   branch: string;
@@ -64,6 +95,10 @@ export async function syncGitBranch(
   }
 
   // 3. Apply sync strategy
+  // Exempt deployment-local config from `reset --hard` before syncing so the
+  // port/domain bound on this host is never reverted to the repo default.
+  await ensureResetExemptions(dir);
+
   if (strategy === "reset") {
     const resetRes = await run("git", ["reset", "--hard", `origin/${targetBranch}`], { cwd: dir });
     if (resetRes.exitCode !== 0) {

@@ -11,6 +11,8 @@ import type {
 } from "../types.js";
 import { installComposerDependencies } from "../../composer.js";
 import { runLaravelMigrations, ensureStorageLink, optimizeLaravel } from "../../laravel.js";
+import { resolvePorts } from "../../ports.js";
+import { loadConfig } from "../../../config/loader.js";
 
 export class LaravelProvider implements ApplicationProvider {
   readonly name = "laravel";
@@ -42,8 +44,26 @@ export class LaravelProvider implements ApplicationProvider {
 
     let octaneServer: "roadrunner" | "swoole" | "frankenphp" | "none" = "none";
     if (hasOctane) {
-      if (existsSync(join(dir, ".rr.yaml")) || existsSync(join(dir, "rr"))) {
+      // Detect the configured Octane server rather than defaulting blindly.
+      // Order: explicit .orkestra.yml config > RoadRunner binary/config >
+      // extension availability > roadrunner (Octane's own default).
+      let configured: string | undefined;
+      try {
+        const cfg = await loadConfig(dir);
+        configured = cfg?.services?.octane?.server;
+      } catch {}
+      if (configured === "swoole" || configured === "frankenphp" || configured === "roadrunner") {
+        octaneServer = configured;
+      } else if (existsSync(join(dir, ".rr.yaml")) || existsSync(join(dir, "rr")) || existsSync(join(dir, "rr.yaml"))) {
         octaneServer = "roadrunner";
+      } else if (
+        allDeps["laravel/octane-swoole"] ||
+        allDeps["openswoole/openswoole"] ||
+        allDeps["swoole/swoole"]
+      ) {
+        octaneServer = "swoole";
+      } else if (allDeps["dunglas/frankenphp"] || allDeps["frankenphp/frankenphp"]) {
+        octaneServer = "frankenphp";
       } else {
         octaneServer = "roadrunner";
       }
@@ -127,17 +147,11 @@ export class LaravelProvider implements ApplicationProvider {
     const config = context.config;
     const services: ServiceDefinition[] = [];
 
-    const apiPort =
-      (typeof config?.proxy === "object" ? config.proxy.api?.port : undefined) ||
-      config?.services?.octane?.port ||
-      config?.port ||
-      8000;
-
-    const reverbPort =
-      (typeof config?.proxy === "object" ? config.proxy.realtime?.port : undefined) ||
-      config?.services?.reverb?.port ||
-      config?.reverbPort ||
-      8080;
+    // Single source of truth for ports — see deployment/ports.ts
+    const { apiPort, reverbPort } = resolvePorts(config, {
+      projectName: context.projectName,
+      defaultApiPort: detection.defaultPort,
+    });
 
     // HTTP Service: Octane (if available/enabled) or standard Laravel web fallback
     const octaneExplicitlyDisabled = config?.services?.octane?.enabled === false;
@@ -147,14 +161,23 @@ export class LaravelProvider implements ApplicationProvider {
        detection.capabilities.hasOctane);
 
     if (octaneEnabled) {
-      const serverType = detection.capabilities.octaneServer !== "none"
-        ? detection.capabilities.octaneServer
-        : "roadrunner";
+      // Explicit config wins over detection so `services.octane.server` is
+      // honoured even when detection ran against a different config state.
+      const detected = detection.capabilities.octaneServer;
+      const configured = config?.services?.octane?.server;
+      const serverType =
+        configured === "swoole" || configured === "frankenphp" || configured === "roadrunner"
+          ? configured
+          : detected && detected !== "none"
+            ? detected
+            : "roadrunner";
 
       services.push({
         name: "octane",
         type: "octane",
         port: apiPort,
+        octaneServer: serverType,
+        maxRequests: config?.services?.octane?.maxRequests ?? 500,
         command: `${context.binaries.php} artisan octane:start --server=${serverType} --host=127.0.0.1 --port=${apiPort} --no-interaction`,
       });
     } else {
@@ -175,6 +198,11 @@ export class LaravelProvider implements ApplicationProvider {
         type: "queue",
         queueConnection: config?.services?.queue?.connection || "redis",
         queues: config?.services?.queue?.queues || "default",
+        queueSleep: config?.services?.queue?.sleep ?? 3,
+        queueTries: config?.services?.queue?.tries ?? 3,
+        queueTimeout: config?.services?.queue?.timeout ?? 90,
+        queueMaxJobs: config?.services?.queue?.maxJobs ?? 500,
+        queueMaxTime: config?.services?.queue?.maxTime ?? 3600,
         command: `${context.binaries.php} artisan queue:work --sleep=3 --tries=3 --no-interaction`,
       });
     }
@@ -204,32 +232,16 @@ export class LaravelProvider implements ApplicationProvider {
     const config = context.config;
     const proxies: ProxyDefinition[] = [];
 
-    const apiDomain =
-      (typeof config?.proxy === "object" ? config.proxy.api?.domain : undefined) ||
-      config?.domain ||
-      `${context.projectName}.dev.com`;
-
-    const apiPort =
-      (typeof config?.proxy === "object" ? config.proxy.api?.port : undefined) ||
-      config?.services?.octane?.port ||
-      config?.port ||
-      8000;
+    const { apiDomain, apiPort, reverbDomain, reverbPort } = resolvePorts(config, {
+      projectName: context.projectName,
+      defaultApiPort: detection.defaultPort,
+    });
 
     proxies.push({
       domain: apiDomain,
       port: apiPort,
       ssl: config?.ssl ?? true,
     });
-
-    const reverbDomain =
-      (typeof config?.proxy === "object" ? config.proxy.realtime?.domain : undefined) ||
-      config?.reverbDomain;
-
-    const reverbPort =
-      (typeof config?.proxy === "object" ? config.proxy.realtime?.port : undefined) ||
-      config?.services?.reverb?.port ||
-      config?.reverbPort ||
-      8080;
 
     if (reverbDomain && detection.capabilities.hasReverb) {
       proxies.push({
@@ -250,9 +262,10 @@ export class LaravelProvider implements ApplicationProvider {
     const config = context.config;
     const checks: HealthCheckDefinition[] = [];
 
-    const apiDomain =
-      (typeof config?.proxy === "object" ? config.proxy.api?.domain : undefined) ||
-      config?.domain;
+    const { apiDomain, reverbDomain, reverbPort } = resolvePorts(config, {
+      projectName: context.projectName,
+      defaultApiPort: detection.defaultPort,
+    });
 
     if (apiDomain) {
       checks.push({
@@ -263,15 +276,9 @@ export class LaravelProvider implements ApplicationProvider {
     }
 
     if (detection.capabilities.hasReverb) {
-      const reverbPort =
-        (typeof config?.proxy === "object" ? config.proxy.realtime?.port : undefined) ||
-        config?.services?.reverb?.port ||
-        config?.reverbPort ||
-        8080;
-
       checks.push({
         port: reverbPort,
-        domain: (typeof config?.proxy === "object" ? config.proxy.realtime?.domain : undefined) || config?.reverbDomain,
+        domain: reverbDomain,
       });
     }
 

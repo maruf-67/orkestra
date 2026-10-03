@@ -5,6 +5,7 @@ import { resolveBinaries } from "../services/mise-resolver.js";
 import { detectDatabases } from "../detection/database.js";
 import { loadConfig } from "../config/loader.js";
 import { getProject } from "../state/store.js";
+import { resolvePorts } from "../deployment/ports.js";
 
 interface InspectOptions {
   dir?: string;
@@ -26,18 +27,13 @@ export async function inspect(dirOption?: string, options?: InspectOptions) {
   const runtime = resolved?.detection.runtime || "node";
   const detectedDbs = databases.filter((d) => d.detected).map((d) => d.name);
 
-  const port =
-    (typeof config?.proxy === "object" ? config.proxy.api?.port : undefined) ||
-    config?.port ||
-    existingProject?.port ||
-    resolved?.detection.defaultPort ||
-    3000;
-
-  const domain =
-    (typeof config?.proxy === "object" ? config.proxy.api?.domain : undefined) ||
-    config?.domain ||
-    existingProject?.domain ||
-    `${projectName}.dev.com`;
+  // Same resolution chain as deploy, so `inspect` reports the deployed port.
+  const ports = resolvePorts(config, {
+    state: existingProject,
+    projectName,
+    defaultApiPort: resolved?.detection.defaultPort ?? 3000,
+  });
+  const { apiPort: port, apiDomain: domain, reverbPort } = ports;
 
   if (options?.json) {
     console.log(
@@ -53,6 +49,7 @@ export async function inspect(dirOption?: string, options?: InspectOptions) {
           binaries,
           port,
           domain,
+          reverbPort,
           databases: detectedDbs,
           capabilities: resolved?.detection.capabilities || {},
         },
@@ -77,6 +74,9 @@ export async function inspect(dirOption?: string, options?: InspectOptions) {
   table([
     ["Domain", `https://${domain}`],
     ["Internal Port", String(port)],
+    ...(ports.reverbDomain
+      ? [["Reverb Domain", `wss://${ports.reverbDomain}`], ["Reverb Port", String(reverbPort)] as [string, string]]
+      : []),
     ["Proxy Provider", typeof config?.proxy === "string" ? config.proxy : config?.proxy?.provider || "caddy"],
   ]);
 

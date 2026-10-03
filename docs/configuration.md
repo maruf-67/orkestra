@@ -147,6 +147,88 @@ Overrides automatic detection from `package.json` scripts.
 startCommand: "pnpm dev"
 ```
 
+### reverbPort / reverbDomain
+
+WebSocket (Laravel Reverb) port and public domain. Both are resolved through the
+same precedence chain as `port`, and the values actually deployed are recorded in
+`~/.orkestra/state.json`.
+
+```yaml
+reverbPort: 8822
+reverbDomain: reverb.example.com
+```
+
+### deployment
+
+Production deployment settings.
+
+```yaml
+deployment:
+  branch: main          # git branch to sync
+  strategy: reset       # reset (git reset --hard) | pull (git pull)
+  packageManager: auto  # auto | bun | pnpm | npm | yarn
+  composer: true        # true | { install: true, flags: "--no-dev --optimize-autoloader --prefer-dist" }
+  database:
+    migrate: true
+    seed: false
+    force: true
+  optimize: true
+  commands:
+    preDeploy: "./scripts/warm-cache.sh"
+    postDeploy: "./scripts/notify.sh"
+  remote:               # optional SSH target
+    host: example.com
+    path: /srv/apps/my-app
+    user: deploy
+    port: 22
+```
+
+### services
+
+Framework service definitions. For Laravel these control the systemd units.
+
+```yaml
+services:
+  octane:
+    enabled: auto       # auto | true | false
+    server: roadrunner  # roadrunner | swoole | frankenphp
+    maxRequests: 500
+    port: 8022
+  queue:
+    enabled: true
+    connection: redis
+    queues: default
+    sleep: 3
+    tries: 3
+    timeout: 90
+    maxJobs: 500
+    maxTime: 3600
+  reverb:
+    enabled: auto
+    port: 8822
+    domain: reverb.example.com
+```
+
+> **Deployment-local config.** `.orkestra.yml` records the port and domain bound on
+> a given host. `orkestra deploy` and `orkestra redeploy` append it to
+> `.git/info/exclude` automatically so `git reset --hard` cannot revert it to a
+> repository default.
+
+### health
+
+Post-deployment verification.
+
+```yaml
+health:
+  api:
+    url: https://api.example.com/up
+    expectedStatus: 200
+    timeoutMs: 5000
+  realtime:
+    enabled: auto
+    timeoutMs: 5000
+```
+
 ## Example Configurations
 
 ### Next.js Project

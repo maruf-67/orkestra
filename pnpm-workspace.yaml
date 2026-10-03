@@ -1,3 +1,9 @@
+# Single-package repository. The `packages` field is required by pnpm whenever
+# this file exists; without it `pnpm store path` and `pnpm install` abort with
+# "packages field missing or empty".
+packages:
+  - "."
+
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:

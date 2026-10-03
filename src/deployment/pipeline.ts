@@ -9,6 +9,7 @@ import { systemd } from "../services/systemd.js";
 import { CaddyProxy } from "../providers/proxy/caddy.js";
 import { performDeploymentHealthChecks } from "./health.js";
 import { saveDeploymentReport } from "./history.js";
+import { freezeAgainstState, resolvePorts } from "./ports.js";
 import type { DeploymentOptions, DeploymentReport, DeploymentStep } from "./types.js";
 import type { DeploymentContext } from "./providers/types.js";
 import { log, spinner } from "../utils/logger.js";
@@ -158,60 +159,26 @@ export class DeploymentPipeline {
       if (existingProject) {
         const freshConfig = await loadConfig(projectDir);
         if (freshConfig) {
-          let mutated = false;
-          const stateDomain = existingProject.domain;
-          const statePort = existingProject.port;
-          // Domain drift guard
-          if (freshConfig.domain && freshConfig.domain !== stateDomain) {
-            log.warn(`Config domain ${freshConfig.domain} differs from deployed ${stateDomain} — preserving deployed domain.`);
-            freshConfig.domain = stateDomain;
-            mutated = true;
-          } else if (!freshConfig.domain && stateDomain) {
-            freshConfig.domain = stateDomain;
-            mutated = true;
+          const before = resolvePorts(freshConfig, { projectName });
+          const merged = freezeAgainstState(freshConfig, existingProject);
+          const after = resolvePorts(merged, { projectName });
+
+          if (before.apiPort !== after.apiPort) {
+            log.warn(`Config port ${before.apiPort} differs from deployed ${after.apiPort} — preserving deployed port.`);
           }
-          if (freshConfig.port && freshConfig.port !== statePort) {
-            log.warn(`Config port ${freshConfig.port} differs from deployed ${statePort} — preserving deployed port.`);
-            freshConfig.port = statePort;
-            mutated = true;
-          } else if (!freshConfig.port && statePort) {
-            freshConfig.port = statePort;
-            mutated = true;
+          if (before.apiDomain !== after.apiDomain) {
+            log.warn(`Config domain ${before.apiDomain} differs from deployed ${after.apiDomain} — preserving deployed domain.`);
           }
-          // Reverb drift guard — prefer state, then pre-sync config, then keep fresh
-          const preSyncReverbPort = (config as any)?.reverbPort as number | undefined;
-          const preSyncReverbDomain = (config as any)?.reverbDomain as string | undefined;
-          const stateReverbPort = existingProject.reverbPort;
-          const stateReverbDomain = existingProject.reverbDomain;
-          const targetReverbPort = stateReverbPort ?? preSyncReverbPort;
-          const targetReverbDomain = stateReverbDomain ?? preSyncReverbDomain;
-          if (targetReverbPort && freshConfig.reverbPort !== targetReverbPort) {
-            if (freshConfig.reverbPort) log.warn(`Config reverbPort ${freshConfig.reverbPort} differs from deployed ${targetReverbPort} — preserving.`);
-            (freshConfig as any).reverbPort = targetReverbPort;
-            mutated = true;
+          if (before.reverbPort !== after.reverbPort) {
+            log.warn(`Config reverbPort ${before.reverbPort} differs from deployed ${after.reverbPort} — preserving.`);
           }
-          if (targetReverbDomain && freshConfig.reverbDomain !== targetReverbDomain) {
-            (freshConfig as any).reverbDomain = targetReverbDomain;
-            mutated = true;
-          }
-          // Also sync services.reverb if present
-          if (targetReverbPort && (freshConfig as any).services?.reverb && (freshConfig as any).services.reverb.port !== targetReverbPort) {
-            (freshConfig as any).services.reverb.port = targetReverbPort;
-            mutated = true;
-          }
-          if (targetReverbDomain && (freshConfig as any).services?.reverb && (freshConfig as any).services.reverb.domain !== targetReverbDomain) {
-            (freshConfig as any).services.reverb.domain = targetReverbDomain;
-            mutated = true;
-          }
-          if (mutated) {
-            context.config = freshConfig;
-            report.proxy.apiDomain = freshConfig.domain;
-            report.proxy.apiPort = freshConfig.port;
-          } else {
-            context.config = freshConfig;
-          }
-        } else if (existingProject) {
-          context.config = { ...config, domain: existingProject.domain, port: existingProject.port, reverbPort: (config as any)?.reverbPort ?? existingProject.reverbPort, reverbDomain: (config as any)?.reverbDomain ?? existingProject.reverbDomain } as any;
+
+          context.config = merged;
+          report.proxy.apiDomain = after.apiDomain;
+          report.proxy.apiPort = after.apiPort;
+        } else {
+          // Config missing after reset — keep state as the only source of truth
+          context.config = freezeAgainstState(config, existingProject);
         }
       }
 
@@ -266,9 +233,20 @@ export class DeploymentPipeline {
               phpBinary: binaries.php,
               nodeBinary: binaries.node,
               bunBinary: binaries.bun,
-              octanePort: srv.port,
+              octanePort: srv.type === "octane" ? srv.port : undefined,
+              // Reverb's unit template renders {{REVERB_PORT}}; without this the
+              // manager falls back to a hardcoded 8080 and silently rebinds the
+              // WebSocket server on every deploy.
+              reverbPort: srv.type === "reverb" ? srv.port : undefined,
+              octaneServer: srv.octaneServer,
+              maxRequests: srv.maxRequests,
               queueConnection: srv.queueConnection,
               queues: srv.queues,
+              sleep: srv.queueSleep,
+              tries: srv.queueTries,
+              timeout: srv.queueTimeout,
+              maxJobs: srv.queueMaxJobs,
+              maxTime: srv.queueMaxTime,
             });
             await systemd.restart(systemd.getServiceName(projectName, srv.type));
 
@@ -308,6 +286,10 @@ export class DeploymentPipeline {
           const primary = proxyDefs[0];
           const existingProject2 = await getProject(projectDir);
           const reverbDef = proxyDefs.find((p) => p.websocket);
+          const ports = resolvePorts(context.config, {
+            projectName,
+            state: existingProject2,
+          });
 
           await registerProject({
             name: projectName,
@@ -317,8 +299,8 @@ export class DeploymentPipeline {
             proxy: "caddy",
             path: projectDir,
             registeredAt: existingProject2?.registeredAt || new Date().toISOString(),
-            reverbPort: reverbDef?.port ?? (context.config as any)?.reverbPort ?? existingProject2?.reverbPort,
-            reverbDomain: reverbDef?.domain ?? (context.config as any)?.reverbDomain ?? existingProject2?.reverbDomain,
+            reverbPort: reverbDef?.port ?? ports.reverbPort,
+            reverbDomain: reverbDef?.domain ?? ports.reverbDomain,
           });
 
           report.proxy = {
@@ -336,6 +318,9 @@ export class DeploymentPipeline {
           proxySpin.fail(`Proxy configuration failed: ${err.message}`);
           report.proxy.status = "failed";
           recordStep("proxy", "Proxy configuration failed", "failed", Date.now() - proxyStepStart, err.message);
+          // A deploy that restarts services against a proxy that was never
+          // written is a broken deploy. Do not report it as success.
+          throw err;
         }
       }
 
@@ -346,6 +331,7 @@ export class DeploymentPipeline {
       const healthStepStart = Date.now();
 
       let allHealthy = true;
+      const healthResults: Array<{ overallHealthy: boolean }> = [];
       for (const h of healthDefs) {
         const res = await performDeploymentHealthChecks({
           apiUrl: h.apiUrl,
@@ -360,16 +346,27 @@ export class DeploymentPipeline {
             reverb: report.services.reverb === "restarted",
           },
         });
+        healthResults.push(res);
         if (!res.overallHealthy) allHealthy = false;
       }
 
       const healthDuration = Date.now() - healthStepStart;
+      const failedChecks: string[] = [];
+      for (const [i, h] of healthDefs.entries()) {
+        const label = h.apiUrl ? `api ${h.apiUrl}` : `reverb ${h.domain || `port ${h.port}`}`;
+        if (!healthResults[i].overallHealthy) failedChecks.push(label);
+      }
+
       if (allHealthy) {
         healthSpin.succeed(`Health checks passed in ${(healthDuration / 1000).toFixed(1)}s`);
         recordStep("health", "All health checks passed", "success", healthDuration);
       } else {
-        healthSpin.fail("Health checks completed with warnings");
-        recordStep("health", "Health checks warning", "success", healthDuration);
+        // Surface the failure instead of logging a warning: a deploy whose
+        // health checks fail must not be reported as a successful deployment.
+        const detail = `Unhealthy: ${failedChecks.join(", ")}`;
+        healthSpin.fail(`Health checks failed — ${detail}`);
+        recordStep("health", `Health checks failed (${detail})`, "failed", healthDuration);
+        throw new Error(`Deployment health checks failed. ${detail}`);
       }
     } catch (err: any) {
       report.status = "failed";

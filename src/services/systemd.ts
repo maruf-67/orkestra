@@ -30,7 +30,7 @@ export interface SystemdServiceOptions {
 
 export type ServiceType = "web" | "octane" | "queue" | "reverb";
 
-const DEFAULT_TEMPLATES: Record<ServiceType, string> = {
+export const DEFAULT_TEMPLATES: Record<ServiceType, string> = {
   web: `[Unit]
 Description=Orkestra Web ({{PROJECT_NAME}})
 After=network.target
@@ -134,7 +134,7 @@ export class SystemdManager {
     return `orkestra-${cleanName}-${type}.service`;
   }
 
-  private renderTemplate(content: string, vars: Record<string, string | number>): string {
+  renderTemplate(content: string, vars: Record<string, string | number | undefined>): string {
     let result = content;
     for (const [key, val] of Object.entries(vars)) {
       const regex = new RegExp(`\\{\\{${key}\\}\\}`, "g");
