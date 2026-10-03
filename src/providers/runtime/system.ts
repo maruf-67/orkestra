@@ -1,36 +1,19 @@
-import type { RuntimeProvider, RuntimeInfo } from "../types.js";
-import { run, isCommandAvailable, which } from "../../utils/exec.js";
+import type { RuntimeProvider } from "../types.js";
+import { isCommandAvailable } from "../../utils/exec.js";
 
+/**
+ * SystemRuntime — presence check only.
+ *
+ * // Always last: the system toolchain is the fallback, not a preference.
+
+Only `detect()` is consumed (by `orkestra doctor` and `detectRuntime`),
+ * so this provider deliberately implements nothing more.
+ */
 export class SystemRuntime implements RuntimeProvider {
   readonly name = "system";
-  readonly priority = 10;
+  readonly priority = 0;
 
   async detect(): Promise<boolean> {
     return isCommandAvailable("node");
-  }
-
-  async current(): Promise<RuntimeInfo | null> {
-    const result = await run("node", ["--version"]);
-    if (result.exitCode !== 0) return null;
-
-    const version = result.stdout.trim().replace(/^v/, "");
-    const path = await which("node");
-    return {
-      name: "node",
-      version,
-      path: path || "",
-    };
-  }
-
-  async install(_version: string): Promise<void> {
-    throw new Error(
-      "System runtime cannot install Node.js. Please install mise or nvm."
-    );
-  }
-
-  async use(_version: string): Promise<void> {
-    throw new Error(
-      "System runtime cannot switch Node.js versions. Please install mise or nvm."
-    );
   }
 }

@@ -1,33 +1,17 @@
-import type { RuntimeProvider, RuntimeInfo } from "../types.js";
-import { run, isCommandAvailable, which } from "../../utils/exec.js";
+import type { RuntimeProvider } from "../types.js";
+import { isCommandAvailable } from "../../utils/exec.js";
 
+/**
+ * VoltaRuntime — presence check only.
+ *
+ * Only `detect()` is consumed (by `orkestra doctor` and `detectRuntime`),
+ * so this provider deliberately implements nothing more.
+ */
 export class VoltaRuntime implements RuntimeProvider {
   readonly name = "volta";
-  readonly priority = 50;
+  readonly priority = 65;
 
   async detect(): Promise<boolean> {
     return isCommandAvailable("volta");
-  }
-
-  async current(): Promise<RuntimeInfo | null> {
-    const result = await run("volta", ["list", "node", "--format=plain"]);
-    if (result.exitCode !== 0) return null;
-
-    const versionMatch = result.stdout.match(/v(\d+\.\d+\.\d+)/);
-    const version = versionMatch ? versionMatch[1] : "unknown";
-    const path = await which("node");
-    return {
-      name: "node",
-      version,
-      path: path || "",
-    };
-  }
-
-  async install(version: string): Promise<void> {
-    await run("volta", ["install", `node@${version}`]);
-  }
-
-  async use(version: string): Promise<void> {
-    await run("volta", ["install", `node@${version}`]);
   }
 }

@@ -1,35 +1,23 @@
-import type { RuntimeProvider, RuntimeInfo } from "../types.js";
-import { run, isCommandAvailable } from "../../utils/exec.js";
+import type { RuntimeProvider } from "../types.js";
+import { isCommandAvailable } from "../../utils/exec.js";
 
+/**
+ * MiseRuntime — presence check only.
+ *
+ * // mise is a mise-managed toolchain; the integration that actually runs is
+  // `resolveBinaries` in services/mise-resolver.ts, which uses `mise which` and
+  // `mise trust`. The former current()/install()/use() pair here was dead code and
+  // wrong: `mise current --json` is not a valid command, and install() hardcoded
+  // `node@`, so a PHP request would have run `mise install node@8.4`.
+
+Only `detect()` is consumed (by `orkestra doctor` and `detectRuntime`),
+ * so this provider deliberately implements nothing more.
+ */
 export class MiseRuntime implements RuntimeProvider {
   readonly name = "mise";
   readonly priority = 100;
 
   async detect(): Promise<boolean> {
     return isCommandAvailable("mise");
-  }
-
-  async current(): Promise<RuntimeInfo | null> {
-    const result = await run("mise", ["current", "--json"]);
-    if (result.exitCode !== 0) return null;
-
-    try {
-      const data = JSON.parse(result.stdout);
-      return {
-        name: data.name || "unknown",
-        version: data.version || "unknown",
-        path: data.path || "",
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  async install(version: string): Promise<void> {
-    await run("mise", ["install", `node@${version}`]);
-  }
-
-  async use(version: string): Promise<void> {
-    await run("mise", ["use", `node@${version}`]);
   }
 }

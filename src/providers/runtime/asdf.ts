@@ -1,32 +1,17 @@
-import type { RuntimeProvider, RuntimeInfo } from "../types.js";
-import { run, isCommandAvailable, which } from "../../utils/exec.js";
+import type { RuntimeProvider } from "../types.js";
+import { isCommandAvailable } from "../../utils/exec.js";
 
+/**
+ * AsdfRuntime — presence check only.
+ *
+ * Only `detect()` is consumed (by `orkestra doctor` and `detectRuntime`),
+ * so this provider deliberately implements nothing more.
+ */
 export class AsdfRuntime implements RuntimeProvider {
   readonly name = "asdf";
-  readonly priority = 60;
+  readonly priority = 70;
 
   async detect(): Promise<boolean> {
     return isCommandAvailable("asdf");
-  }
-
-  async current(): Promise<RuntimeInfo | null> {
-    const result = await run("asdf", ["current", "nodejs"]);
-    if (result.exitCode !== 0) return null;
-
-    const version = result.stdout.trim().split("\n")[0];
-    const path = await which("node");
-    return {
-      name: "node",
-      version,
-      path: path || "",
-    };
-  }
-
-  async install(version: string): Promise<void> {
-    await run("asdf", ["install", "nodejs", version]);
-  }
-
-  async use(version: string): Promise<void> {
-    await run("asdf", ["global", "nodejs", version]);
   }
 }

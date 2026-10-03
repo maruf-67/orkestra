@@ -1,33 +1,17 @@
-import type { RuntimeProvider, RuntimeInfo } from "../types.js";
-import { run, isCommandAvailable, which } from "../../utils/exec.js";
+import type { RuntimeProvider } from "../types.js";
+import { isCommandAvailable } from "../../utils/exec.js";
 
+/**
+ * FnmRuntime — presence check only.
+ *
+ * Only `detect()` is consumed (by `orkestra doctor` and `detectRuntime`),
+ * so this provider deliberately implements nothing more.
+ */
 export class FnmRuntime implements RuntimeProvider {
   readonly name = "fnm";
-  readonly priority = 70;
+  readonly priority = 75;
 
   async detect(): Promise<boolean> {
     return isCommandAvailable("fnm");
-  }
-
-  async current(): Promise<RuntimeInfo | null> {
-    const result = await run("fnm", ["current"]);
-    if (result.exitCode !== 0) return null;
-
-    const version = result.stdout.trim().replace(/^v/, "");
-    // Use global which() instead of running 'which' directly
-    const path = await which("node");
-    return {
-      name: "node",
-      version,
-      path: path || "",
-    };
-  }
-
-  async install(version: string): Promise<void> {
-    await run("fnm", ["install", version]);
-  }
-
-  async use(version: string): Promise<void> {
-    await run("fnm", ["use", version]);
   }
 }

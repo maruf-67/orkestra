@@ -1,16 +1,21 @@
-export interface RuntimeInfo {
-  name: string;
-  version: string;
-  path: string;
-}
-
+/**
+ * A runtime/toolchain manager that Orkestra can detect.
+ *
+ * Deliberately presence-only. `current()`, `install()` and `use()` were
+ * declared here and implemented by all six providers, but nothing ever called
+ * them — and the mise implementation was not merely unused but wrong
+ * (`mise current --json` is not a valid command, and `install()` hardcoded
+ * `node@`, so a PHP request would have run `mise install node@8.4`).
+ *
+ * The mise integration that does run is `resolveBinaries` in
+ * `services/mise-resolver.ts`, built on `mise which` and `mise trust`.
+ * Reintroducing version reporting should start from `mise ls --current --json`,
+ * which returns an object keyed by tool name rather than a single record.
+ */
 export interface RuntimeProvider {
   readonly name: string;
   readonly priority: number;
   detect(): Promise<boolean>;
-  current(): Promise<RuntimeInfo | null>;
-  install(version: string): Promise<void>;
-  use(version: string): Promise<void>;
 }
 
 export interface ProxyConfig {
@@ -53,21 +58,4 @@ export interface PackageManager {
   name: string;
   command: string;
   lockfile: string;
-}
-
-export interface ProviderManifest {
-  type: "proxy" | "runtime" | "hosts" | "service";
-  name: string;
-  priority: number;
-}
-
-export interface ProcessProvider {
-  readonly name: string;
-  detect(): Promise<boolean>;
-  start(name: string, command: string, args: string[], env?: Record<string, string>): Promise<number>;
-  stop(name: string): Promise<void>;
-  delete(name: string): Promise<void>;
-  restart(name: string): Promise<void>;
-  list(): Promise<Array<{ name: string; pid: number; status: string; port?: number }>>;
-  logs(name: string, lines: number): Promise<string>;
 }
