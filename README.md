@@ -2,13 +2,13 @@
 
 **A capability-driven development workspace manager and server deployment system.**
 
-[![Version](https://img.shields.io/badge/version-1.0.6-blue.svg)](https://github.com/maruf-67/orkestra)
+[![Version](https://img.shields.io/badge/version-1.0.7-blue.svg)](https://github.com/maruf-67/orkestra)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Bun](https://img.shields.io/badge/bun-%3E%3D1.4-black.svg)](https://bun.sh)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)]()
 
-Orkestra orchestrates local workspace environments and automates production cloud server deployments (**Laravel**, **Next.js**, **Nuxt**) with **Systemd process supervision**, **Caddy reverse proxying**, **Mise runtime management** (PHP 8.4, Bun 1.4+, Node.js, Composer, pnpm), **real-time observability** (`orkestra monitor`), and native **Model Context Protocol (MCP)** AI server integration.
+Orkestra orchestrates local workspace environments and automates production cloud server deployments (**Laravel**, **Next.js**, **Nuxt**) with **Systemd process supervision**, **Caddy reverse proxying**, **Mise runtime management** (PHP 8.4, Bun 1.4+, Node.js, Composer), **real-time observability** (`orkestra monitor`), and native **Model Context Protocol (MCP)** AI server integration.
 
 ---
 
@@ -16,7 +16,7 @@ Orkestra orchestrates local workspace environments and automates production clou
 
 - **Multi-Framework Application Providers**: Pluggable provider architecture for **Laravel** (Octane, Queue Workers, Reverb WebSockets), **Next.js** (SSR Web), and **Nuxt** (Nitro SSR).
 - **Runtime Abstraction**: First-class support for **Bun (1.4+)**, **Node.js**, and **PHP 8.4**, dynamically resolved via **Mise** or system binaries.
-- **Package Manager Intelligence**: Auto-detects `pnpm`, `bun`, `yarn`, `npm`, and `composer` with frozen/immutable lockfile installations (`--frozen-lockfile`, `--immutable`, `ci`).
+- **Package Manager Intelligence**: Auto-detects `bun`, `pnpm`, `yarn`, `npm`, and `composer` with frozen/immutable lockfile installations (`--frozen-lockfile`, `--immutable`, `ci`).
 - **Systemd Supervision & Reliability**: Native Systemd templates without PM2 overhead, auto-restarts, worker recycling, and zero-downtime reloads.
 - **Automatic Caddy Proxy**: Instant public Let's Encrypt / ZeroSSL HTTPS certificates and `tls internal` for local development.
 - **Live System Observability**: `orkestra monitor` displays CPU, RAM, Disk, Load, Systemd process metrics (`MemoryCurrent`, `CPUUsageNSec`), crash-loop detection, and infrastructure health (Caddy, Redis, PostgreSQL, MySQL).

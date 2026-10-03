@@ -4,15 +4,20 @@ Orkestra works on Linux, macOS, and Windows. This guide covers installation for 
 
 ## Prerequisites
 
-- **Node.js** 22 or higher
-- **npm**, **pnpm**, or **yarn**
+- **Node.js** 22 or higher (or Bun 1.4+)
 
 ## Installing Orkestra
+
+### Using bun
+
+```bash
+bun add -g orkestra
+```
 
 ### Using npm
 
 ```bash
-npm install -g orkestra
+bun add -g orkestra
 ```
 
 ### Using pnpm
@@ -45,7 +50,7 @@ sudo apt install -y mkcert
 sudo mkcert -install
 
 # Install Orkestra
-npm install -g orkestra
+bun add -g orkestra  # or: npm install -g orkestra
 ```
 
 ### Linux (Fedora/RHEL)
@@ -59,7 +64,7 @@ sudo dnf install -y mkcert
 sudo mkcert -install
 
 # Install Orkestra
-npm install -g orkestra
+bun add -g orkestra  # or: npm install -g orkestra
 ```
 
 ### macOS
@@ -76,7 +81,7 @@ brew install mkcert
 mkcert -install
 
 # Install Orkestra
-npm install -g orkestra
+bun add -g orkestra  # or: npm install -g orkestra
 ```
 
 ### Windows
@@ -93,7 +98,7 @@ choco install mkcert -y
 mkcert -install
 
 # Install Orkestra
-npm install -g orkestra
+bun add -g orkestra  # or: npm install -g orkestra
 ```
 
 ## Smart Installer

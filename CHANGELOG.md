@@ -5,6 +5,54 @@ All notable changes to Orkestra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-10-03
+
+### Fixed
+- **Hosts file no longer destroys subdomain entries.** `HostsFileProvider` matched
+  domains with `line.includes(domain)`, so `add("texelbd.com")` or
+  `remove("texelbd.com")` also matched `api.texelbd.com` and `reverb.texelbd.com`
+  and deleted them. Matching is now exact against the hostnames a line actually maps,
+  comment-aware, case- and trailing-dot-insensitive, and alias-aware. `add()` is also
+  idempotent regardless of the whitespace a hosts file uses.
+- **Revived a dead injection-detection rule.** `SQL Injection (PHP concat)` required
+  a dot directly after a quote-delimited literal, which can never match because PHP
+  always closes the literal with its own quote before the concatenation dot. Any
+  report claiming to check for this was silently clean. The rule now matches the real
+  forms (`"x = " . $v`, `"a='{$v}'" . $w`, `$col . " = " . $val`) across
+  `whereRaw|selectRaw|orderByRaw|havingRaw`, while `[^;]*` keeps the match inside a
+  single statement so an unrelated dynamic expression is not misattributed.
+- **Security scanner no longer flags its own test fixtures.** Scanning a clean
+  repository that tests the scanner produced 14 findings against itself: seven from
+  the secret scanner and seven more from the injection scanner, which also matched the
+  literal rule names inside its own `it(...)` titles and `toContain()` assertions. AWS's
+  published documentation keys are now always ignored; fixtures under
+  `test/`/`spec/`/`fixtures/` are suppressed only when the line carries an explicit
+  `example`/`dummy`/`fake` marker *outside the matched credential itself*; and the
+  scanner's own suite is exempt alongside `src/security/`. A genuine leak or
+  vulnerability committed under `test/` is still reported, and both cases are pinned by
+  tests.
+
+### Changed
+- Migrated the toolchain from pnpm to Bun 1.4+ for install, build, test, and type
+  checking. `pnpm-lock.yaml` and `pnpm-workspace.yaml` are replaced by `bun.lock`;
+  pnpm's `allowBuilds` maps to `trustedDependencies` in `package.json`.
+- CI and Release now provision Bun via `oven-sh/setup-bun@v2` and run
+  `bun install --frozen-lockfile`. The setup-node cache dependency on
+  `pnpm store path` is gone, so the earlier step-ordering failure cannot recur.
+- Added `bun run test:coverage` and `bun run check` (typecheck, test, build), plus
+  `@vitest/coverage-v8`, which was previously missing so coverage could not be
+  measured at all.
+- Installation docs now list `bun add -g orkestra` first. Orkestra still *detects*
+  pnpm, npm, yarn, and composer when deploying applications — that is a feature for
+  target projects and is unchanged.
+
+### Added
+- Test coverage for the highest-risk previously untested code: Caddyfile domain-block
+  editing, exact-name hosts-file matching, the security scanners, and port resolution
+  across all three framework providers. The suite grew from 97 to 167 tests;
+  `src/providers/hosts`, `src/security`, and the application providers are now between
+  71% and 100% covered.
+
 ## [1.0.6] - 2026-10-03
 
 ### Fixed

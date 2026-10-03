@@ -152,7 +152,7 @@
 2. Test on `dev` branch
 3. `dev` → `main` (via PR with approval)
 4. Tag release: `git tag v0.2.0`
-5. Publish to npm: `npm publish`
+5. Publish to npm: tag `v<version>` and push (the Release workflow publishes)
 
 ## Versioning Rules
 

@@ -26,7 +26,11 @@ const RULES: Rule[] = [
   { type: "SQL Injection (concat)", severity: "critical", regex: /(query|execute|raw|whereRaw|selectRaw).*\+.*req\.(body|query|params)/i, fix: "Use parameterized queries / bindings" },
   { type: "SQL Injection (template)", severity: "critical", regex: /(query|execute)\s*\(\s*`[^`]*\$\{(req\.|params|body)/i, fix: "Use placeholders (?) and bindings" },
   { type: "SQL Injection (PHP raw)", severity: "critical", regex: /DB::(raw|select|statement)\s*\(\s*["'][^"']*\$[a-zA-Z_]/i, fix: "Use bindings: DB::select('... where id = ?', [$id])" },
-  { type: "SQL Injection (PHP concat)", severity: "high", regex: /whereRaw\s*\(\s*["'][^"']*\.\s*\$/i, fix: "Use whereRaw('... ?', [$val])" },
+  // `[^;]*` keeps the match inside a single statement, so a dynamic fragment
+  // elsewhere in the same file is not attributed to whereRaw. The dot must be
+  // followed by a variable, which is what distinguishes concatenation from a
+  // static raw clause.
+  { type: "SQL Injection (PHP concat)", severity: "high", regex: /(whereRaw|selectRaw|orderByRaw|havingRaw)\s*\([^;]*\.\s*\$/i, fix: "Use whereRaw('... ?', [$val]) with bindings" },
   // Command injection
   { type: "Command Injection (exec)", severity: "critical", regex: /(exec|execSync|spawn|execa)\s*\([^)]*\+.*req\./i, fix: "Sanitize input or use allow-list; never concat user input into shell" },
   { type: "Command Injection (shell:true)", severity: "high", regex: /shell:\s*true/i, fix: "Avoid shell:true with user input; use arg array" },
@@ -44,13 +48,28 @@ export async function scanInjection(dir: string): Promise<InjectionFinding[]> {
   return findings.filter(f => !isFalsePositive(f));
 }
 
+/** Test/spec fixture directories, mirroring the suppression in secrets.ts. */
+const FIXTURE_PATH = /(^|\/)(test|tests|spec|specs|__tests__|__mocks__|fixtures)(\/|$)|\.test\.|\.spec\./;
+
 function isFalsePositive(f: InjectionFinding): boolean {
   // Skip security rule definitions
   if (f.file.includes("src/security/")) return true;
+  // The scanner's own test suite necessarily embeds vulnerable-looking code and
+  // literal rule names inside `it(...)` titles and toContain() assertions.
+  // Exempt it for the same reason src/security/ is exempt.
+  if (/security[/\\][^/\\]*\.test\./.test(f.file)) return true;
   if (f.file.includes("src/utils/exec.ts") && f.type.includes("Command Injection")) return true;
   if (f.file.includes("components/ui") && f.type.includes("dangerouslySetInnerHTML")) return true;
   // JSON-LD via JSON.stringify + sanitized replace is safe
   if (f.type.includes("dangerouslySetInnerHTML") && /JSON\.stringify.*replace\(.*\\u003c/.test(f.excerpt)) return true;
+  // Test suites embed vulnerable-looking code as fixtures. Without this, a
+  // clean repository that tests the scanner reports a page of findings against
+  // itself, which makes the whole report untrustworthy. Only suppressed when
+  // the line carries an explicit example marker, so a genuine vulnerability
+  // committed under test/ is still reported.
+  if (FIXTURE_PATH.test(f.file) && /example|dummy|fake|fixture|notreal|not-real/i.test(f.excerpt)) {
+    return true;
+  }
   return false;
 }
 
