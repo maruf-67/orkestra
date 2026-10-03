@@ -336,7 +336,13 @@ async function addToGitignore(projectDir: string): Promise<void> {
     const newContent = content + separator + "\n# Orkestra\n" + entry + "\n";
     await writeFile(gitignorePath, newContent, "utf-8");
     log.dim("Added .orkestra to .gitignore");
-  } catch {}
+  } catch (err) {
+    // Not cosmetic. If .orkestra is not ignored, the host-specific port config
+    // is committed and pushed, and then travels to every other machine and CI
+    // run that checks the project out. That is worth telling the user about.
+    log.warn(`Could not update ${gitignorePath}: ${err instanceof Error ? err.message : String(err)}`);
+    log.warn("The .orkestra directory will show up in git status and may be committed.");
+  }
 }
 
 function generateYaml(config: {

@@ -31,24 +31,55 @@ export interface RegistrationResult {
 /**
  * Detect port from project files (package.json scripts, .env, composer.json).
  */
+/**
+ * Read and parse a JSON file, distinguishing "not there" from "broken".
+ *
+ * A missing file is normal and must stay silent. A file that exists but cannot
+ * be parsed is not: `detectPortFromProject` would return null, the caller would
+ * fall back to a default port, and the project would silently drift onto a
+ * different port. That is the same failure class as every other port bug fixed
+ * so far, so it is surfaced instead of swallowed.
+ */
+async function readJsonIfPresent(
+  path: string,
+): Promise<{ ok: true; value: any } | { ok: false; reason: "missing" | "invalid" }> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf-8");
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+  try {
+    return { ok: true, value: JSON.parse(raw) };
+  } catch (err) {
+    log.warn(
+      `Could not parse ${path}: ${err instanceof Error ? err.message : String(err)}. ` +
+      `Port detection will fall back to a default, which may differ from the intended port.`,
+    );
+    return { ok: false, reason: "invalid" };
+  }
+}
+
 export async function detectPortFromProject(dir: string, frameworkName: string): Promise<number | null> {
   // Try package.json scripts
   if (["node.js", "next.js", "nuxt", "express", "fastify", "vite", "remix", "astro", "sveltekit"].includes(frameworkName)) {
-    try {
-      const pkg = JSON.parse(await readFile(resolve(dir, "package.json"), "utf-8"));
-      const devScript = pkg.scripts?.dev || pkg.scripts?.start || "";
+    const parsed = await readJsonIfPresent(resolve(dir, "package.json"));
+    if (parsed.ok) {
+      const pkg = parsed.value;
+      const devScript = pkg?.scripts?.dev || pkg?.scripts?.start || "";
       // Match --port=3007, --port 3007, -p 3007, -p3007
-      const portMatch = devScript.match(/(?:--port=?|-p)\s*(\d+)/);
+      const portMatch = String(devScript).match(/(?:--port=?|-p)\s*(\d+)/);
       if (portMatch) return parseInt(portMatch[1]);
-      const portEnvMatch = devScript.match(/PORT=(\d+)/);
+      const portEnvMatch = String(devScript).match(/PORT=(\d+)/);
       if (portEnvMatch) return parseInt(portEnvMatch[1]);
-    } catch {}
+    }
   }
 
   // Try composer.json (Laravel)
   if (frameworkName === "laravel") {
-    try {
-      const composer = JSON.parse(await readFile(resolve(dir, "composer.json"), "utf-8"));
+    const parsed = await readJsonIfPresent(resolve(dir, "composer.json"));
+    if (parsed.ok) {
+      const composer = parsed.value ?? {};
       const scripts = composer.scripts || {};
       const allScriptStrings: string[] = [];
 
@@ -66,7 +97,7 @@ export async function detectPortFromProject(dir: string, frameworkName: string):
         const portMatch = s.match(/--port[= ](\d+)/);
         if (portMatch && !s.includes("reverb:start")) return parseInt(portMatch[1]);
       }
-    } catch {}
+    }
 
     // Try .rr.yaml (RoadRunner)
     try {

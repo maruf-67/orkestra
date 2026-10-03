@@ -61,16 +61,30 @@ export async function remove(options: RemoveOptions) {
     svcSpin.start();
     const svcTypes: Array<"octane" | "queue" | "reverb" | "web"> = ["octane", "queue", "reverb", "web"];
     let svcCleaned = 0;
+    const stillRunning: string[] = [];
     for (const t of svcTypes) {
       const svc = systemd.getServiceName(project.name, t as any);
-      // best-effort stop/disable/rm even if not active
-      try { await run("systemctl", ["stop", svc], { sudo: true }); } catch {}
-      try { await run("systemctl", ["disable", svc], { sudo: true }); } catch {}
-      try { await run("rm", ["-f", join("/etc/systemd/system", svc)], { sudo: true }); svcCleaned++; } catch {}
+      // Stopping and disabling are best-effort: the unit may not exist or may
+      // already be inactive, and `orkestra remove` should not fail over that.
+      // Failing to *stop* a unit that does exist is different — the process
+      // keeps serving traffic after the operator removed the project — so that
+      // case is reported rather than swallowed.
+      const stop = await run("systemctl", ["stop", svc], { sudo: true });
+      if (stop.exitCode !== 0) {
+        stillRunning.push(svc);
+      }
+      await run("systemctl", ["disable", svc], { sudo: true });
+      const rm = await run("rm", ["-f", join("/etc/systemd/system", svc)], { sudo: true });
+      if (rm.exitCode === 0) svcCleaned++;
     }
-    try { await run("systemctl", ["daemon-reload"], { sudo: true }); } catch {}
-    try { await run("systemctl", ["reset-failed"], { sudo: true }); } catch {}
+    await run("systemctl", ["daemon-reload"], { sudo: true });
+    await run("systemctl", ["reset-failed"], { sudo: true });
     svcSpin.succeed(svcCleaned ? `Systemd services removed (${svcCleaned} units)` : "No systemd services to remove");
+
+    if (stillRunning.length > 0) {
+      log.warn(`Could not stop: ${stillRunning.join(", ")}`);
+      log.warn("These units may still be serving traffic. Check with: systemctl status <unit>");
+    }
   }
 
   // 3. Remove SSL certificates (main + reverb)
