@@ -5,6 +5,112 @@ All notable changes to Orkestra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] - 2026-10-04
+
+Port-drift hardening, a shell-injection fix, an honest coverage gate, and 282
+lines of dead code removed. Found by exercising the real binaries — `caddy`,
+`systemd-analyze`, `mise`, and real `git` repositories — rather than by reading
+code.
+
+### Fixed
+
+- **Arguments are no longer mangled by a shell, and can no longer be injected.**
+  `utils/exec.ts` passed every argument through `/bin/sh` (`execa({ shell })`).
+  Two consequences:
+  - *Correctness.* Any argument containing a shell metacharacter broke. Real
+    case: `git log -1 --format=%an|||%s` failed with
+    `/bin/sh: Syntax error: "|" unexpected`, so `getCurrentGitInfo()` returned
+    author `"unknown"` and an empty message for **every** deployment — deploy
+    history has never recorded a real author.
+  - *Security.* Arguments are built from project-controlled values (domains,
+    project names, paths, service names), so a shell interpreted them.
+
+  Execa now passes args as an argv array straight to `execve`. Verified safe:
+  all 122 call sites pass a real binary plus an argv array, and none invokes a
+  shell built-in. The one site that genuinely wants a shell,
+  `run("sh", ["-c", ...])` in `utils/installer.ts`, still works. Windows keeps
+  `shell: true` because Node cannot exec a `.cmd` shim directly.
+
+- **`.git/info/exclude` never protected a tracked `.orkestra.yml`.** The 1.0.6 fix
+  added the file to the exclude list, but that only affects *untracked* files.
+  Since `.orkestra.yml` normally ships in the repository, `reset --hard`
+  overwrote it regardless and the protection was a no-op. Verified directly:
+  with a tracked file and a host-specific value, `reset --hard` reverts it every
+  time. `ensureResetExemptions()` now handles both cases — untracked files via
+  the exclude file, tracked files via `git update-index --skip-worktree`, which
+  is the mechanism that actually works. `freezeAgainstState()` remains the
+  defence in depth, re-applying deployed ports after the reset regardless.
+
+- **A corrupt `composer.json` or `package.json` silently changed the port.**
+  `detectPortFromProject()` wrapped `JSON.parse` in `catch {}`, so a malformed
+  file returned `null`, the caller fell back to a default, and the project
+  landed on a port nobody chose — invisible, and the same class as every other
+  port bug. A `readJsonIfPresent()` helper now separates *missing* (normal,
+  silent) from *invalid* (warns, naming the file and the consequence). Files
+  matched by regex, such as `.env` and `.rr.yaml`, cannot fail to parse, so
+  absence remains their only failure mode and stays silent.
+
+- **Failure to gitignore `.orkestra/` is reported.** That directory holds the
+  host-specific port config; if it is committed it travels to every other
+  machine and CI checkout. Now warns, with the consequence spelled out.
+
+- **`orkestra remove` no longer hides units that keep serving traffic.**
+  Stopping a unit that does not exist stays quiet, but failing to stop one that
+  does exist means the process survives the removal. Stop failures are now
+  collected and reported with the `systemctl` command to check.
+  `disable`/`rm`/`daemon-reload` remain best-effort.
+
+### Changed
+
+- **The coverage number was inflated, and the vitest upgrade exposed it.**
+  Vitest 5 omits files that were never imported, shrinking the denominator. Out
+  of the box it reported `45.62% (1033/2264)` against the honest
+  `21.21% (1033/4869)` — the same 1033 covered statements over half the
+  denominator, with `src/commands`, `cli.ts` and `pipeline.ts` dropped from the
+  report entirely rather than showing 0%. A project at 3% real coverage would
+  have reported 45%. `coverage.all: true` keeps untested files in the report.
+- **Coverage thresholds added and enforced in CI**, and `bun run check` now
+  mirrors CI exactly (`typecheck → test → coverage → build`). Thresholds are a
+  ratchet just under current honest numbers (26/24/32/26), not a target:
+  `src/commands` is ~4.5k lines of sudo/systemd-bound orchestration that needs an
+  injectable process/filesystem seam before unit tests would mean anything, and
+  inflating that number with mock-heavy tests would be worse than leaving the
+  gap visible.
+- **vitest 3.2.7 → 5.0.3.** Clears
+  `[high] vitest — Path Traversal / Arbitrary File Read via @vitest/mocker`.
+  All tests pass unchanged; `orkestra audit -d .` now reports 0 CVE findings.
+
+### Removed
+
+282 lines of dead code, each verified to have zero importers, zero CLI
+registration and zero interface consumers: `commands/register.ts` (96),
+`providers/process/pm2.ts` (57), `plugins/sdk.ts` (60), and the orphaned
+`ProviderManifest`, `ProcessProvider` and `RuntimeInfo` interfaces.
+
+`RuntimeProvider` is trimmed to `detect()`, the only method anything called —
+`current()`, `install()` and `use()` were 18 dead method bodies across six
+providers. The mise implementation was not merely unused but wrong:
+`current()` ran `mise current --json`, which is not a valid command in mise
+2026.8 (the correct form is `mise ls --current --json`, which returns an object
+keyed by tool name, not a single record), and `install()` hardcoded `node@`, so
+a PHP request would have run `mise install node@8.4`. Keeping a broken shim for
+a capability with no consumer is worse than deleting it: the next person to
+reach for `MiseRuntime.current()` would get a silent `null`.
+
+### Added
+
+- `test/deployment/pipeline.test.ts` (31) — all eight steps plus failure paths.
+  The deploy lock is deliberately not mocked: it is a real file, so the
+  stale-lock case, lock contention and release-on-every-exit are tested for real.
+  `pipeline.ts` 21.75% → **100%** statements and functions.
+- `test/deployment/git.test.ts` (19) — against real git repositories, including
+  that a tracked `.orkestra.yml` keeps its host-specific port and `reverbPort`
+  across an actual `reset --hard` while tracked source files still update from
+  `origin`. `git.ts` 1.88% → 93.75%.
+- `test/utils/registration-errors.test.ts` (10) — absent vs corrupt config.
+
+Suite 219 → 293. Honest overall coverage 21.21% → 26.24% statements.
+
 ## [1.0.9] - 2026-10-04
 
 Two fixes on the deploy path, one of them a regression introduced by 1.0.8.

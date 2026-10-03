@@ -36,5 +36,11 @@ jobs:
       - name: Run tests
         run: bun run test
 
+      - name: Coverage gate
+        # Enforces the ratchet thresholds in vitest.config.ts, so coverage
+        # cannot silently regress. `all: true` keeps untested files in the
+        # denominator — without it the reported figure is inflated by omission.
+        run: bun run test:coverage
+
       - name: Build
         run: bun run build
