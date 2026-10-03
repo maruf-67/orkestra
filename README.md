@@ -2,7 +2,7 @@
 
 **A capability-driven development workspace manager and server deployment system.**
 
-[![Version](https://img.shields.io/badge/version-1.0.7-blue.svg)](https://github.com/maruf-67/orkestra)
+[![Version](https://img.shields.io/badge/version-1.0.8-blue.svg)](https://github.com/maruf-67/orkestra)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Bun](https://img.shields.io/badge/bun-%3E%3D1.4-black.svg)](https://bun.sh)

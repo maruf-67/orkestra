@@ -194,7 +194,15 @@ export async function redeploy(options: RedeployOptions) {
             maxJobs: srv.queueMaxJobs,
             maxTime: srv.queueMaxTime,
           });
-          await systemd.restart(systemd.getServiceName(projectName, srv.type));
+          const unitName = systemd.getServiceName(projectName, srv.type);
+          const state = await systemd.restartAndVerify(unitName);
+          if (state !== "active") {
+            const logs = await systemd.journal(unitName, 15);
+            throw new Error(
+              `${unitName} did not stay up after restart (systemd reports "${state}").` +
+                (logs ? `\nLast journal lines:\n${logs}` : ""),
+            );
+          }
         }
         srvSpin.succeed(`Services restarted (${serviceDefs.map(s=>s.type).join(", ")})`);
       } catch (err: any) {

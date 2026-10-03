@@ -224,6 +224,8 @@ export class DeploymentPipeline {
         const srvStepStart = Date.now();
         try {
           const serviceDefs = await provider.services(context, detection);
+          const unitNames: string[] = [];
+
           for (const srv of serviceDefs) {
             await systemd.installService(srv.type, undefined, {
               projectName,
@@ -248,8 +250,35 @@ export class DeploymentPipeline {
               maxJobs: srv.queueMaxJobs,
               maxTime: srv.queueMaxTime,
             });
-            await systemd.restart(systemd.getServiceName(projectName, srv.type));
+            unitNames.push(systemd.getServiceName(projectName, srv.type));
+          }
 
+          // Restart every unit first, then settle once. Verifying per service
+          // would add one wait window per unit, which is noticeable on a Laravel
+          // deploy that brings up web, queue and Reverb together.
+          //
+          // A successful `systemctl restart` only means the unit was started.
+          // With Restart=always a unit that dies immediately keeps looping and
+          // still reports success, so confirm each one stayed up before the
+          // deploy is called healthy.
+          const states = await systemd.restartManyAndVerify(unitNames);
+
+          const broken = unitNames
+            .map((name, i) => ({ name, state: states[i] }))
+            .filter((u) => u.state !== "active");
+
+          if (broken.length > 0) {
+            const details = await Promise.all(
+              broken.map(async (u) => `--- ${u.name} (${u.state}) ---\n${await systemd.journal(u.name, 15)}`),
+            );
+            throw new Error(
+              `${broken.length} systemd unit(s) did not stay up after restart: ` +
+                broken.map((u) => `${u.name} [${u.state}]`).join(", ") +
+                `\n\n${details.join("\n\n")}`,
+            );
+          }
+
+          for (const srv of serviceDefs) {
             if (srv.type === "octane") report.services.octane = "restarted";
             else if (srv.type === "queue") report.services.queue = "restarted";
             else if (srv.type === "reverb") report.services.reverb = "restarted";

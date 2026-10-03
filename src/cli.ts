@@ -279,6 +279,18 @@ export function run() {
       share(options);
     });
 
+  // Commander action handlers are wired fire-and-forget, so a rejected promise
+  // from a command would otherwise surface as an unhandled rejection: a raw
+  // stack trace, and an exit code that does not reliably reflect failure.
+  // Report the actual message and exit non-zero so `orkestra deploy` failing on
+  // an unresolvable toolchain is legible and scriptable.
+  process.on("unhandledRejection", (reason) => {
+    const message = reason instanceof Error ? reason.message : String(reason);
+    process.stderr.write(`\nError: ${message}\n`);
+    process.exitCode = 1;
+    process.exit(1);
+  });
+
   program.parse();
 }
 

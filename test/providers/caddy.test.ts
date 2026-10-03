@@ -20,8 +20,13 @@ beforeEach(() => {
   vi.spyOn(exec, "sudoWriteFile").mockImplementation(async (filePath: string, content: string) => {
     await writeFile(filePath, content, "utf-8");
   });
-  vi.spyOn(exec, "run").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
   vi.spyOn(exec, "isCommandAvailable").mockResolvedValue(true);
+  // Default: Caddy is running under systemd and every command succeeds, so the
+  // real reload path is exercised rather than stubbed out.
+  vi.spyOn(exec, "run").mockImplementation(async (_cmd: string, args: string[] = []) => {
+    if (args[0] === "is-active") return { stdout: "active", stderr: "", exitCode: 0 };
+    return { stdout: "", stderr: "", exitCode: 0 };
+  });
 });
 
 afterEach(() => {
@@ -36,7 +41,6 @@ async function withCaddyfile(initial: string) {
   await writeFile(caddyfile, initial, "utf-8");
 
   caddy.getConfigPath = () => caddyfile;
-  caddy.reload = async () => {};
 
   return { caddyfile, dir };
 }
@@ -45,39 +49,105 @@ async function written(caddyfile: string) {
   return readFile(caddyfile, "utf-8");
 }
 
-describe("Caddy domain matching", () => {
+describe("Caddy block matching", () => {
+  const range = (config: string, domain: string) => caddy.findBlockRange(config, domain);
+
   it("matches a bare domain block", () => {
-    expect(caddy.hasDomain("api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n", "api.texelbd.com")).toBe(true);
+    expect(range("api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n", "api.texelbd.com")).not.toBeNull();
   });
 
   it("matches an http:// prefixed block", () => {
-    expect(caddy.hasDomain("http://api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n", "api.texelbd.com")).toBe(true);
+    expect(range("http://api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n", "api.texelbd.com")).not.toBeNull();
   });
 
   it("matches an https:// prefixed block", () => {
-    expect(caddy.hasDomain("https://api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n", "api.texelbd.com")).toBe(true);
+    expect(range("https://api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n", "api.texelbd.com")).not.toBeNull();
   });
 
   it("matches with leading whitespace", () => {
-    expect(caddy.hasDomain("   api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n", "api.texelbd.com")).toBe(true);
+    expect(range("   api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n", "api.texelbd.com")).not.toBeNull();
   });
 
   it("does not match a different domain", () => {
     const config = "api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n";
-    expect(caddy.hasDomain(config, "reverb.texelbd.com")).toBe(false);
+    expect(range(config, "reverb.texelbd.com")).toBeNull();
   });
 
   it("does not treat a domain as a prefix match of a longer domain", () => {
     // Regression: naive substring matching would rewrite `texelbd.com` when
     // registering `texelbd.com` while `api.texelbd.com` exists, and vice versa.
     const config = "api.texelbd.com {\n  reverse_proxy localhost:8022\n}\n";
-    expect(caddy.hasDomain(config, "texelbd.com")).toBe(false);
+    expect(range(config, "texelbd.com")).toBeNull();
   });
 
   it("escapes regex metacharacters in the domain", () => {
-    // A domain containing a dot must not act as a wildcard.
     const config = "my.app.example.com {\n  reverse_proxy localhost:3000\n}\n";
-    expect(caddy.hasDomain(config, "myXapp.example.com")).toBe(false);
+    expect(range(config, "myXapp.example.com")).toBeNull();
+  });
+
+  it("spans a block containing a nested block", () => {
+    // The regression that corrupted Caddyfiles: a flat `[^}]*` stopped at the
+    // inner `}` and orphaned the remainder of the block.
+    const config = [
+      "api.texelbd.com {",
+      "  tls {",
+      "    dns cloudflare",
+      "  }",
+      "  reverse_proxy localhost:8022",
+      "}",
+      "",
+    ].join("\n");
+    const r = range(config, "api.texelbd.com");
+    expect(r).not.toBeNull();
+    expect(config.slice(r!.start, r!.end)).toBe(
+      "api.texelbd.com {\n  tls {\n    dns cloudflare\n  }\n  reverse_proxy localhost:8022\n}\n",
+    );
+  });
+
+  it("spans several nested blocks", () => {
+    const config = [
+      "api.texelbd.com {",
+      "  encode gzip",
+      "  route {",
+      "    handle /api/* {",
+      "      reverse_proxy localhost:8022",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const r = range(config, "api.texelbd.com");
+    expect(config.slice(r!.start, r!.end).trimEnd().endsWith("}")).toBe(true);
+    expect(config.slice(r!.start, r!.end)).toContain("reverse_proxy localhost:8022");
+  });
+
+  it("is not confused by a brace inside a quoted matcher", () => {
+    const config = [
+      'api.texelbd.com {',
+      '  @blocked expression {header}Match "*"',
+      '  reverse_proxy localhost:8022',
+      '}',
+      '',
+    ].join('\n');
+    const r = range(config, "api.texelbd.com");
+    expect(config.slice(r!.start, r!.end)).toContain("reverse_proxy localhost:8022");
+    expect(config.slice(r!.start, r!.end).trimEnd().endsWith("}")).toBe(true);
+  });
+
+  it("stops at the matching close, not the next site block", () => {
+    const config = [
+      "api.texelbd.com {",
+      "  reverse_proxy localhost:8022",
+      "}",
+      "",
+      "reverb.texelbd.com {",
+      "  reverse_proxy localhost:8822",
+      "}",
+      "",
+    ].join("\n");
+    const r = range(config, "api.texelbd.com");
+    const slice = config.slice(r!.start, r!.end);
+    expect(slice).not.toContain("reverb");
   });
 });
 
@@ -186,6 +256,130 @@ describe("Caddy register idempotency", () => {
     const result = await written(caddyfile);
     expect(result.match(/api\.texelbd\.com \{/g)).toHaveLength(1);
     expect(result.match(/reverb\.texelbd\.com \{/g)).toHaveLength(1);
+  });
+
+  it("preserves a nested block and produces a balanced Caddyfile", async () => {
+    // Regression: rewriting a domain whose block contained a nested `tls { }`
+    // matched only up to the inner `}` and left the rest of the block orphaned.
+    //
+    // The orphan is not merely untidy. Verified against the real caddy binary,
+    // the truncated file adapts to a config that listens on the application's
+    // own port:
+    //
+    //   OLD: listen [':443'] hosts ['api.texelbd.com', 'reverse_proxy']
+    //        listen [':8022'] hosts ['localhost']      <- steals the app port
+    //   NEW: listen [':443'] hosts ['api.texelbd.com']
+    //
+    // So a single deploy of a domain with a nested block could make Caddy
+    // compete with the application for its port.
+    const { caddyfile } = await withCaddyfile(
+      [
+        "api.texelbd.com {",
+        "  tls {",
+        "    dns cloudflare",
+        "  }",
+        "  reverse_proxy localhost:8022",
+        "}",
+        "",
+      ].join("\n")
+    );
+
+    await caddy.register({ domain: "api.texelbd.com", port: 9000, ssl: true });
+
+    const result = await written(caddyfile);
+    // Balanced braces is the property that matters: every { has a }. Counted
+    // with a real brace match, not an escaped literal that would always be 0.
+    const opens = (result.match(/{/g) ?? []).length;
+    const closes = (result.match(/}/g) ?? []).length;
+    expect(opens).toBeGreaterThan(0);
+    expect(opens).toBe(closes);
+
+    // The nested block was replaced wholesale, not truncated at the inner
+    // brace, so nothing from the original block survives. In particular no
+    // stray top-level directive remains to be reinterpreted as a site address.
+    expect(result).not.toContain("dns cloudflare");
+    expect(result).not.toContain("localhost:8022");
+    expect(result).toContain("reverse_proxy localhost:9000");
+  });
+
+  it("leaves hand-written nested blocks on other domains untouched", async () => {
+    const { caddyfile } = await withCaddyfile(
+      [
+        "texelbd.com {",
+        "  encode gzip",
+        "  reverse_proxy localhost:3022 {",
+        "    header_up X-Real-IP {remote_host}",
+        "  }",
+        "}",
+        "",
+        "api.texelbd.com {",
+        "  reverse_proxy localhost:8022",
+        "}",
+        "",
+      ].join("\n")
+    );
+
+    await caddy.register({ domain: "api.texelbd.com", port: 9100, ssl: true });
+
+    const result = await written(caddyfile);
+    expect(result).toContain("header_up X-Real-IP {remote_host}");
+    expect(result).toContain("encode gzip");
+    expect(result).toContain("reverse_proxy localhost:3022");
+    expect(result).toContain("reverse_proxy localhost:9100");
+    expect((result.match(/{/g) ?? []).length).toBe((result.match(/}/g) ?? []).length);
+  });
+});
+
+describe("Caddy reload safety", () => {
+  it("throws and leaves the file untouched when validation fails", async () => {
+    const original = "api.texelbd.com {\\n  reverse_proxy localhost:8022\\n}\\n";
+    const { caddyfile } = await withCaddyfile(original);
+
+    vi.mocked(exec.run).mockResolvedValue({
+      stdout: "",
+      stderr: "caddy: Error: adapting config: unrecognized directive",
+      exitCode: 1,
+    });
+
+    await expect(
+      caddy.register({ domain: "api.texelbd.com", port: 9000, ssl: true })
+    ).rejects.toThrow(/invalid/i);
+
+    // Nothing was written: validation runs before the write.
+    expect(await written(caddyfile)).toBe(original);
+  });
+
+  it("restores the previous config when reload fails", async () => {
+    const original = "api.texelbd.com {\\n  reverse_proxy localhost:8022\\n}\\n";
+    const { caddyfile } = await withCaddyfile(original);
+
+    // Fail only the reload, by inspecting the arguments. Keying off call order is
+    // brittle because reload() probes `systemctl is-active caddy` first.
+    let reloads = 0;
+    vi.mocked(exec.run).mockImplementation(async (_cmd: string, args?: string[]) => {
+      if (Array.isArray(args) && args.includes("reload")) {
+        reloads++;
+        // The first reload fails; the rollback reload succeeds.
+        if (reloads === 1) return { stdout: "", stderr: "reload exploded", exitCode: 1 };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    await expect(
+      caddy.register({ domain: "api.texelbd.com", port: 9000, ssl: true })
+    ).rejects.toThrow(/reload failed/i);
+
+    expect(await written(caddyfile)).toBe(original);
+  });
+
+  it("does not leave a staged candidate file behind", async () => {
+    const { caddyfile, dir } = await withCaddyfile("");
+
+    await caddy.register({ domain: "api.texelbd.com", port: 8022, ssl: true });
+
+    const { readdir } = await import("node:fs/promises");
+    const files = await readdir(dir + "/Caddy");
+    expect(files.filter((f) => f.includes("orkestra-candidate"))).toHaveLength(0);
   });
 });
 
