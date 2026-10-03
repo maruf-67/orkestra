@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { loadConfig } from "../config/loader.js";
 import { providerRegistry } from "./providers/registry.js";
 import { resolveBinaries } from "../services/mise-resolver.js";
+import type { ResolvedBinaries } from "../services/mise-resolver.js";
 import { syncGitBranch, getCurrentGitInfo } from "./git.js";
 import { systemd } from "../services/systemd.js";
 import { CaddyProxy } from "../providers/proxy/caddy.js";
@@ -64,8 +65,30 @@ export class DeploymentPipeline {
     };
 
     const initialGit = await getCurrentGitInfo(projectDir);
-    const binaries = await resolveBinaries(projectDir);
     const resolved = await providerRegistry.resolve(projectDir);
+
+    // Toolchain resolution is strict for a real deploy, because a bare `php`
+    // baked into systemd ExecStart is worse than a refusal. A dry run is the
+    // opposite case: being unable to resolve php is precisely what a preview
+    // exists to report, so it must always render and say what is missing.
+    let binaries: ResolvedBinaries;
+    let binaryError: string | undefined;
+    try {
+      binaries = await resolveBinaries(projectDir);
+    } catch (err) {
+      if (!options.dryRun) throw err;
+      binaryError = err instanceof Error ? err.message : String(err);
+      binaries = {
+        php: "php",
+        composer: "composer",
+        node: "node",
+        bun: "bun",
+        pnpm: "pnpm",
+        yarn: "yarn",
+        npm: "npm",
+        isMise: false,
+      };
+    }
 
     const report: DeploymentReport = {
       projectName,
@@ -113,6 +136,15 @@ export class DeploymentPipeline {
       log.plain(`  • Strategy:        git ${strategy} origin/${targetBranch}`);
       log.plain(`  • Build:           ${resolved?.detection.buildCommand || "none"}`);
       log.plain(`  • Start:           ${resolved?.detection.startCommand || "none"}`);
+
+      // Report the toolchain problem rather than letting the preview abort on
+      // it — this is the information the user came to get.
+      if (binaryError) {
+        log.plain("");
+        log.warn(`Toolchain incomplete — a real deploy would stop here:`);
+        log.plain(`  ${binaryError}`);
+        log.plain(`  Resolved fallbacks: php=${binaries.php} composer=${binaries.composer}`);
+      }
       return report;
     }
 

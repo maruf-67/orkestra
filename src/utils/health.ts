@@ -5,7 +5,7 @@ import { resolve, basename } from "node:path";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../config/loader.js";
 import { detectFramework } from "../detection/framework.js";
-import { findAvailablePort } from "../state/ports.js";
+import { findAvailablePort, isPortOccupied } from "../state/ports.js";
 
 const MAX_RESTART_ATTEMPTS = 3;
 const RESTART_DELAY_MS = 2000;
@@ -160,9 +160,24 @@ export class HealthMonitor {
         return;
       }
 
-      // Find port
-      let port = config?.port || framework.port;
-      port = await findAvailablePort(port);
+      // Resolve the port for the restart.
+      //
+      // This used to call findAvailablePort unconditionally, which re-scanned
+      // the range on every auto-restart and, because it was called without a
+      // project path, treated the port recorded for this project in state as
+      // belonging to somebody else. A health-triggered restart therefore moved
+      // the app to a different port than .orkestra.yml records, breaking
+      // bookmarks, .env and the Caddy mapping.
+      //
+      // Now the configured port is preferred whenever it is genuinely free or
+      // already belongs to this project, and the scan only runs on a real
+      // conflict.
+      const configuredPort = config?.port || framework.port;
+      let port = configuredPort;
+      const occupied = await isPortOccupied(configuredPort);
+      if (occupied) {
+        port = await findAvailablePort(configuredPort, projectPath);
+      }
 
       // Spawn process
       const child = spawn(command.cmd, command.args, {
