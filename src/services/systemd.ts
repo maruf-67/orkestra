@@ -30,11 +30,24 @@ export interface SystemdServiceOptions {
 
 export type ServiceType = "web" | "octane" | "queue" | "reverb";
 
+/**
+ * Double every literal `%` so systemd does not read it as a specifier.
+ *
+ * A project path such as `/srv/apps/100%-coverage/api` would otherwise produce
+ * a unit that systemd refuses to parse, and the failure surfaces as an opaque
+ * `systemctl daemon-reload` error rather than anything about the path.
+ */
+export function escapeSystemdSpecifiers(content: string): string {
+  return content.replace(/%/g, "%%");
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const DEFAULT_TEMPLATES: Record<ServiceType, string> = {
   web: `[Unit]
 Description=Orkestra Web ({{PROJECT_NAME}})
-After=network.target
-Wants=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -59,8 +72,8 @@ WantedBy=multi-user.target
 `,
   octane: `[Unit]
 Description=Orkestra Laravel Octane ({{PROJECT_NAME}})
-After=network.target
-Wants=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -83,8 +96,8 @@ WantedBy=multi-user.target
 `,
   queue: `[Unit]
 Description=Orkestra Laravel Queue Worker ({{PROJECT_NAME}})
-After=network.target
-Wants=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -99,14 +112,15 @@ Restart=always
 RestartSec=5s
 KillMode=process
 TimeoutStopSec=90s
+LimitNOFILE=65535
 
 [Install]
 WantedBy=multi-user.target
 `,
   reverb: `[Unit]
 Description=Orkestra Laravel Reverb WebSocket ({{PROJECT_NAME}})
-After=network.target
-Wants=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -179,7 +193,11 @@ export class SystemdManager {
       REVERB_PORT: options.reverbPort || 8080,
     };
 
-    const unitContent = this.renderTemplate(templateContent, vars);
+    const rawContent = this.renderTemplate(templateContent, vars);
+    // systemd treats `%` as a specifier introducer, so a literal `%` in a path
+    // or value makes the unit fail to parse. Escaping has to happen after
+    // templating, otherwise the `%%` produced here would be re-escaped.
+    const unitContent = escapeSystemdSpecifiers(rawContent);
     const serviceName = this.getServiceName(options.projectName, type);
     const unitPath = join("/etc/systemd/system", serviceName);
 
@@ -235,6 +253,77 @@ export class SystemdManager {
     if (!isLinux()) return true;
     const res = await run("systemctl", ["is-active", serviceName]);
     return res.stdout.trim() === "active";
+  }
+
+  /**
+   * Restart a unit and confirm it actually stayed up.
+   *
+   * `systemctl restart` succeeds as soon as the unit is started, which for
+   * `Type=simple` means the process was forked. With `Restart=always` and
+   * `RestartSec=3s`, a unit that dies immediately loops forever while still
+   * reporting a successful restart. Deploys therefore used to claim services
+   * were "restarted" while they were crash-looping.
+   *
+   * The unit must be active at the *end* of the settle window, not merely on the
+   * first poll: a service that starts and dies a moment later is still broken.
+   * A `failed` state short-circuits so a bad unit is reported immediately.
+   */
+  async restartAndVerify(
+    serviceName: string,
+    settleMs = 2000,
+  ): Promise<"active" | "failed" | "inactive"> {
+    return (await this.restartManyAndVerify([serviceName], settleMs))[0];
+  }
+
+  /**
+   * Restart several units, then verify them together.
+   *
+   * Restarting first and settling once keeps the added latency to a single
+   * window instead of one per service, which matters when a Laravel deploy
+   * brings up web, queue and Reverb together.
+   */
+  async restartManyAndVerify(
+    serviceNames: string[],
+    settleMs = 2000,
+  ): Promise<Array<"active" | "failed" | "inactive">> {
+    for (const name of serviceNames) {
+      await this.restart(name);
+    }
+    if (serviceNames.length === 0) return [];
+
+    const deadline = Date.now() + settleMs;
+    const states = new Map<string, "active" | "failed" | "inactive">();
+
+    do {
+      await sleep(500);
+      for (const name of serviceNames) {
+        // Re-checked every tick: the last reading before the deadline wins.
+        const res = await run("systemctl", ["is-active", name]);
+        const raw = res.stdout.trim();
+        const state: "active" | "failed" | "inactive" =
+          raw === "active" ? "active" : raw === "failed" ? "failed" : "inactive";
+        states.set(name, state);
+      }
+      // Fail fast rather than waiting out the window on a unit already failed.
+      if ([...states.values()].includes("failed")) break;
+    } while (Date.now() < deadline);
+
+    return serviceNames.map(
+      (name) => states.get(name) ?? "inactive",
+    );
+  }
+
+  /** Recent journal lines for a unit, used to explain a failed start. */
+  async journal(serviceName: string, lines = 15): Promise<string> {
+    if (!isLinux()) return "";
+    const res = await run("journalctl", [
+      "-u",
+      serviceName,
+      "-n",
+      String(lines),
+      "--no-pager",
+    ]);
+    return `${res.stdout || res.stderr || ""}`.trim();
   }
 
   async getStatus(serviceName: string): Promise<"running" | "stopped" | "failed" | "inactive" | "unknown"> {

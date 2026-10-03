@@ -5,6 +5,83 @@ All notable changes to Orkestra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-10-03
+
+Stack hardening for the mise + Caddy + systemd deployment path. Every change
+below was found by exercising the real binaries, not by reading the code.
+
+### Fixed
+
+- **Caddy no longer corrupts the Caddyfile when a site block contains a nested
+  block.** Site blocks were matched with `^\\s*domain\\s*\\{[^}]*\\}`, and `[^}]*`
+  stops at the *first* `}`, so any block containing `tls { }`, `handle { }`,
+  `route { }` or `header { }` was rewritten only up to the inner brace. The
+  orphaned remainder was not merely untidy — verified against the real `caddy`
+  binary, the truncated file adapts to a config that **listens on the
+  application's own port**:
+
+  ```
+  OLD: listen [':443']  hosts ['api.texelbd.com', 'reverse_proxy']
+       listen [':8022'] hosts ['localhost']      <- steals the app port
+  NEW: listen [':443']  hosts ['api.texelbd.com']
+  ```
+
+  So a single deploy of a domain with a nested block could make Caddy compete
+  with the application for its port. Block matching is now a brace-depth scan
+  that respects quoted matchers, so the block is replaced or removed whole.
+- **Caddy reload failures are no longer swallowed.** Both the `systemctl reload
+  caddy` and the `caddy reload` paths discarded their exit code, so a config
+  Caddy rejected still reported success — the same silent-drift class as the
+  Reverb port bug. Both paths now throw with the captured stderr.
+- **Caddy config is validated before it is written.** `caddy validate` was never
+  invoked anywhere. Writes are now staged, validated, and only then committed; if
+  the reload fails, the previous config is restored and reloaded so a bad edit
+  cannot take the proxy down.
+- **Unresolvable toolchains fail the deploy instead of degrading silently.**
+  `resolveBinaries` fell back to a bare command name whenever `mise which`
+  failed — untrusted project config, or a version not yet installed. `php` and
+  `composer` are baked into systemd `ExecStart`, so systemd ran the unit with a
+  minimal PATH and either failed to start or silently used a *different* system
+  PHP than the project targets, while the deploy reported success. Both now
+  raise `BinaryResolutionError` naming the tool, the reason, and the fix. Tools
+  that are not `ExecStart` paths (`node`, `bun`, `pnpm`, `yarn`, `npm`) still
+  degrade to a bare name, since that is harmless.
+- **Project mise config is trusted before resolution.** `mise trust` was never
+  called, so a project-local `mise.toml` could make `mise which` report its
+  tools as inactive. Now run automatically; opt out with
+  `resolveBinaries(cwd, { trustProject: false })`.
+- **Services are verified after restart instead of assumed.** `systemctl restart`
+  succeeds once the unit is *started*, which for `Type=simple` means the process
+  was forked. With `Restart=always` a unit that dies immediately loops forever
+  and still reports a successful restart, so deploys claimed services were
+  "restarted" while they were crash-looping. Units are now polled for a settle
+  window and must be active at the end; a failure aborts the deploy and prints
+  the relevant `journalctl` output. All units are restarted first and settled
+  once, so the added latency is a single window rather than one per service.
+- **Units wait for a usable network.** All four templates used
+  `After=network.target`, which is reached before the network is usable, so a
+  queue worker or Octane could lose its Redis/DB connection on boot. Now
+  `network-online.target`.
+- **Literal `%` in a unit is escaped.** systemd reads `%` as a specifier
+  introducer. Confirmed against `systemd-analyze verify`: a project path
+  containing `%z` yields `ExecStart=...100%z/...` and systemd rejects the unit
+  with `Invalid slot`. Paths are rendered into both `WorkingDirectory` and
+  `ExecStart`, so such a project produced a service that did not exist after
+  deploy. Narrow, but a real hard failure.
+- **Unhandled command failures now exit non-zero with a readable message.**
+  Commander actions are wired fire-and-forget, so a rejected promise surfaced
+  as a raw stack trace and an unreliable exit code.
+
+### Changed
+- `LimitNOFILE=65535` was set on the web, Octane and Reverb units but missing
+  from the queue worker, which is the unit most likely to exhaust descriptors.
+
+### Added
+- `test/providers/caddy.test.ts` 22 → 27, `test/services/mise-resolver.test.ts`
+  (12) and `test/services/systemd-hardening.test.ts` (22). Suite 167 → 210.
+  All four generated unit types were additionally checked with the real
+  `systemd-analyze verify` and are valid.
+
 ## [1.0.7] - 2026-10-03
 
 ### Fixed
