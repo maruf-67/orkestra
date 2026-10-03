@@ -5,6 +5,70 @@ All notable changes to Orkestra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2026-10-04
+
+Two fixes on the deploy path, one of them a regression introduced by 1.0.8.
+
+### Fixed
+
+- **`deploy --dry-run` no longer fails when the toolchain is incomplete.**
+  Regression from 1.0.8. `resolveBinaries` became strict — it throws when `php`
+  or `composer` cannot be resolved, which is correct for a real deploy because
+  those paths are baked into systemd `ExecStart`. But it was called *before* the
+  dry-run guard, so the read-only preview aborted on exactly the condition it
+  exists to report. A preview now always renders and names the problem:
+
+  ```
+  i [Dry Run] Deployment preview for dryrun-app (Branch: main)
+    • Framework:       laravel (^11.0)
+  ⚠ Toolchain incomplete — a real deploy would stop here:
+    Cannot resolve "php" to a real executable: php was not found on the system
+    PATH and mise is not installed. Install php, or install mise so project
+    toolchains are used.
+    Resolved fallbacks: php=php composer=composer
+  ```
+
+  Verified end to end with `php`, `composer` and `mise` all absent from `PATH`:
+  the preview renders, and the same environment still refuses the real deploy
+  with exit code 1.
+
+- **A restart can no longer move a project off its registered port.** Port drift
+  returned in a different place from the 1.0.6 fix. `findAvailablePort` accepts an
+  optional `forProjectPath`; when supplied, a project may reclaim the port state
+  records for it. When omitted, that same port is treated as owned by somebody
+  else. Three call sites omitted it, so an app could be started or restarted on a
+  port other than the one in `.orkestra.yml`, breaking bookmarks, `.env` and the
+  Caddy mapping:
+
+  | Call site | Before |
+  |---|---|
+  | `commands/up.ts` | `findAvailablePort(port)` |
+  | `commands/start.ts` | `findAvailablePort(port)` |
+  | `utils/health.ts` | `findAvailablePort(port)` — and **unconditionally** |
+
+  The health-monitor path was the worst of the three: it re-resolved the port on
+  *every* auto-restart rather than only on a real conflict. All three now pass
+  the project path, and the health path only scans when the configured port is
+  genuinely occupied. This is the same failure you hit repeatedly across
+  1.0.2–1.0.5, so it is worth confirming against `texel-front` before merging.
+
+### Changed
+- `isPortOccupied` was duplicated privately in `commands/up.ts` and
+  `commands/start.ts`. Promoted to `state/ports.ts` and exported, so the health
+  monitor uses the same check instead of re-deriving it. Probing `127.0.0.1` is
+  the conservative direction, since a listener on `0.0.0.0` also holds loopback.
+- Deployments that fail *before* the pipeline lock — an unresolvable toolchain, or
+  an undetectable framework — throw rather than being recorded in the deployment
+  report, so they leave no entry in deploy history. Pre-existing behaviour, not
+  introduced here; `rollback` and `orkestra audit --history` cannot see these
+  failures. Tracked as a follow-up.
+
+### Added
+- `test/deployment/dry-run-and-port-guard.test.ts` (5) and
+  `test/state/port-affinity.test.ts` (4). Suite 210 → 219. The port suite
+  includes a structural guard that fails if any `findAvailablePort` call site
+  omits the project path, so a fourth site cannot reintroduce the drift.
+
 ## [1.0.8] - 2026-10-03
 
 Stack hardening for the mise + Caddy + systemd deployment path. Every change

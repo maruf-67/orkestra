@@ -12,6 +12,21 @@ function isPortAvailable(port: number): Promise<boolean> {
   });
 }
 
+/**
+ * Whether a port is currently held by a listening socket.
+ *
+ * Probes 127.0.0.1 because that is the conservative direction: a process bound
+ * to 0.0.0.0 also holds the loopback address, so a free loopback probe will not
+ * miss an existing listener.
+ *
+ * This was previously duplicated privately in `commands/up.ts` and
+ * `commands/start.ts`; it lives here so the health monitor can use the same
+ * check instead of re-deriving it.
+ */
+export async function isPortOccupied(port: number): Promise<boolean> {
+  return !(await isPortAvailable(port));
+}
+
 export async function findAvailablePort(preferred?: number, forProjectPath?: string): Promise<number> {
   const start = preferred || 8000;
   const max = 9999;

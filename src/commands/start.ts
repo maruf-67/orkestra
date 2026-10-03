@@ -5,7 +5,7 @@ import { log, spinner, heading } from "../utils/logger.js";
 import { detectFramework } from "../detection/framework.js";
 import { getProject, setProjectRunning, isProcessAlive } from "../state/store.js";
 import { loadConfig } from "../config/loader.js";
-import { findAvailablePort } from "../state/ports.js";
+import { findAvailablePort, isPortOccupied } from "../state/ports.js";
 import { registerProjectAuto } from "../utils/registration.js";
 import { writeLog, getLogPath } from "../utils/logger-file.js";
 import { healthMonitor } from "../utils/health.js";
@@ -17,18 +17,6 @@ interface StartOptions {
   port?: number;
   foreground?: boolean;
   build?: boolean;
-}
-
-async function isPortOccupied(port: number): Promise<boolean> {
-  const { createServer } = await import("node:net");
-  return new Promise((resolve) => {
-    const server = createServer();
-    server.unref();
-    server.on("error", () => resolve(true));
-    server.listen(port, "127.0.0.1", () => {
-      server.close(() => resolve(false));
-    });
-  });
 }
 
 async function getProductionCommand(
@@ -135,7 +123,10 @@ export async function start(options: StartOptions) {
   const isPortInUse = await isPortOccupied(port);
   if (isPortInUse) {
     log.warn("Port " + port + " is in use by another process");
-    port = await findAvailablePort(port);
+    // Pass projectDir so this project can reclaim its own registered port.
+    // Without it the port recorded in state is treated as another project's and
+    // the app starts on a different port than the one registered.
+    port = await findAvailablePort(port, projectDir);
     log.info("Using alternative port: " + port);
 
     if (domain) {

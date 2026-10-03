@@ -5,7 +5,7 @@ import { log, spinner, heading } from "../utils/logger.js";
 import { detectFramework } from "../detection/framework.js";
 import { getProject, setProjectRunning, isProcessAlive } from "../state/store.js";
 import { loadConfig } from "../config/loader.js";
-import { findAvailablePort } from "../state/ports.js";
+import { findAvailablePort, isPortOccupied } from "../state/ports.js";
 import { registerProjectAuto } from "../utils/registration.js";
 import { writeLog, getLogPath } from "../utils/logger-file.js";
 import { healthMonitor } from "../utils/health.js";
@@ -20,20 +20,6 @@ interface UpOptions {
   all?: boolean;
 }
 
-/**
- * Check if a port is occupied by another process.
- */
-async function isPortOccupied(port: number): Promise<boolean> {
-  const { createServer } = await import("node:net");
-  return new Promise((resolve) => {
-    const server = createServer();
-    server.unref();
-    server.on("error", () => resolve(true));
-    server.listen(port, "127.0.0.1", () => {
-      server.close(() => resolve(false));
-    });
-  });
-}
 
 async function getStartCommand(
   dir: string,
@@ -232,7 +218,11 @@ export async function up(options: UpOptions) {
   const isPortInUse = await isPortOccupied(port);
   if (isPortInUse) {
     log.warn(`Port ${port} is in use by another process`);
-    port = await findAvailablePort(port);
+    // Pass projectDir so this project can reclaim the port already recorded for
+    // it. Without it, state reports the project's own port as taken by someone
+    // else and the app silently moves to a different port than the one
+    // registered, which is how local ports drift out of sync with .orkestra.yml.
+    port = await findAvailablePort(port, projectDir);
     log.info(`Using alternative port: ${port}`);
 
     // Update proxy configuration with new port
