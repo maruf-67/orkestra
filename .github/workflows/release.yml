@@ -12,17 +12,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm must be installed before setup-node, because `cache: pnpm` shells
+      # out to `pnpm store path` during the setup-node step.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+
       - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
           cache: "pnpm"
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.20.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
