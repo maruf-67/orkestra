@@ -11,40 +11,40 @@ jobs:
 
     permissions:
       contents: read
-      # Required for npm trusted publishing (OIDC) and harmless when using a
-      # classic NODE_AUTH_TOKEN.
+      # Required for npm trusted publishing (OIDC). Harmless when publishing
+      # with a classic NODE_AUTH_TOKEN.
       id-token: write
 
     steps:
       - uses: actions/checkout@v4
 
-      # pnpm must be installed before setup-node, because `cache: pnpm` shells
-      # out to `pnpm store path` during the setup-node step.
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
         with:
-          version: 11.20.0
+          bun-version: 1.4.2
 
       - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
-          cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
-      - name: Build
-        run: pnpm build
+      - name: Type check
+        run: bun run typecheck
 
       - name: Run tests
-        run: pnpm test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
 
       - name: Publish to npm
         # `npm publish` uses the .npmrc written by setup-node (registry-url +
-        # NODE_AUTH_TOKEN). pnpm prefers OIDC trusted publishing, which fails
-        # outright when only a classic token is configured.
+        # NODE_AUTH_TOKEN). `bun publish` prefers OIDC trusted publishing and
+        # aborts when only a classic token is configured.
         run: npm publish --provenance=false --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

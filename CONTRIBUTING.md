@@ -7,7 +7,7 @@ Thank you for your interest in contributing to Orkestra! This guide will help yo
 ### Prerequisites
 
 - Node.js 22+
-- pnpm (recommended)
+- Bun 1.4+ (recommended)
 - Git
 
 ### Clone and Install
@@ -18,10 +18,10 @@ git clone https://github.com/maruf-67/orkestra.git
 cd orkestra
 
 # Install dependencies
-pnpm install
+bun install
 
 # Build the project
-pnpm build
+bun run build
 
 # Link for local development
 npm link
@@ -52,7 +52,7 @@ orkestra/
 
 ```bash
 # Build and watch for changes
-pnpm dev
+bun run dev
 
 # In another terminal, test your changes
 orkestra --version
@@ -62,19 +62,19 @@ orkestra --version
 
 ```bash
 # Run all tests
-pnpm test
+bun run test
 
 # Run tests in watch mode
-pnpm test:watch
+bun run test:watch
 
 # Run specific test file
-pnpm test -- test/detection/framework.test.ts
+bun run test test/detection/framework.test.ts
 ```
 
 ### Type Checking
 
 ```bash
-pnpm lint
+bun run typecheck
 ```
 
 ## Making Changes
@@ -116,16 +116,23 @@ chore: maintenance tasks
 
 ## Code Style
 
-- TypeScript strict mode
-- ESLint for linting
-- Prettier for formatting
+- TypeScript strict mode (`strict`, `noUnusedLocals`, `noUnusedParameters`,
+  `noFallthroughCasesInSwitch`)
+- `typecheck` is the lint gate: `tsc --noEmit`
+- No ESLint or Prettier is configured; match the surrounding style
 
 ```bash
-# Format code
-pnpm format
+# Type check (the lint gate)
+bun run typecheck
 
-# Lint code
-pnpm lint
+# Tests
+bun run test
+
+# Coverage
+bun run test:coverage
+
+# Everything CI runs, in order
+bun run check
 ```
 
 ## Testing Guidelines
@@ -133,6 +140,10 @@ pnpm lint
 - Write tests for new features
 - Ensure all tests pass before submitting
 - Aim for meaningful coverage, not 100%
+- Prioritise the risky paths: proxy config editing, hosts-file writes, systemd unit
+  rendering, security detection rules, and port resolution. Those are the places
+  where a silent regression breaks a live deployment, so they should not be left
+  untested.
 
 ## Documentation
 

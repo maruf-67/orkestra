@@ -37,6 +37,12 @@ const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", ".t
 const SKIP_FILES = new Set(["pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lockb", "bun.lock"]);
 const TEXT_EXTS = new Set([".ts", ".js", ".tsx", ".jsx", ".php", ".py", ".env", ".yml", ".yaml", ".json", ".md", ".sh"]);
 
+/** AWS's canonical documentation key. Published in the AWS docs, never a real secret. */
+const AWS_DOC_EXAMPLE_KEY = /AKIAIOSFODNN7EXAMPLE|ASIAIOSFODNN7EXAMPLE|wJalrXUtnFEMI\/K7MDENG\/bPxRfiCYEXAMPLEKEY/;
+
+/** Test/spec fixture directories. */
+const FIXTURE_PATH = /(^|\/)(test|tests|spec|specs|__tests__|__mocks__|fixtures)(\/|$)|\.test\.|\.spec\./;
+
 function isLikelyFalsePositive(file: string, type: string, matched: string, lineText: string): boolean {
   if (file.includes("src/security/") && /regex:|SECRET_PATTERNS|Hardcoded Bearer Token/.test(lineText)) return true;
   if (type === "Hardcoded Bearer Token" && /^Bearer\s+token$/i.test(matched.trim())) return true;
@@ -50,6 +56,19 @@ function isLikelyFalsePositive(file: string, type: string, matched: string, line
   if (type === "Bangladesh NID" && !/(nid|national[_-]?id|nid_number)/i.test(lineText)) return true;
   // Ignore generic long hex that is not a key context
   if (type === "Generic API Key" && /test|mock|fake/i.test(lineText)) return true;
+  // AWS's published example keys are never real credentials.
+  if (AWS_DOC_EXAMPLE_KEY.test(matched)) return true;
+  // Test suites embed synthetic credentials as fixtures. Without this a clean
+  // repository that tests its own scanner reports critical findings against
+  // itself, which destroys trust in the report. The marker is searched only in
+  // the line with the matched credential removed, otherwise a key that happens
+  // to contain "fake" or "dummy" would suppress itself.
+  if (FIXTURE_PATH.test(file)) {
+    const lineWithoutSecret = matched ? lineText.split(matched).join("") : lineText;
+    if (/example|dummy|fake|placeholder|notreal|not-real|redacted|xxxx/i.test(lineWithoutSecret)) {
+      return true;
+    }
+  }
   return false;
 }
 

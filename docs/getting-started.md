@@ -5,6 +5,9 @@ Orkestra is a cross-platform development workspace manager that simplifies local
 ## Quick Install
 
 ```bash
+# Using bun (recommended)
+bun add -g orkestra
+
 # Using npm
 npm install -g orkestra
 

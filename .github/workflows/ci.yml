@@ -17,27 +17,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
         with:
-          # Pinned to match `packageManager` in package.json so CI and local
-          # cannot diverge. pnpm-workspace.yaml uses settings introduced after 9.
-          version: 11.20.0
+          bun-version: 1.4.2
 
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: pnpm build
-
-      - name: Run tests
-        run: pnpm test
+        run: bun install --frozen-lockfile
 
       - name: Type check
-        run: pnpm lint
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun run test
+
+      - name: Build
+        run: bun run build
