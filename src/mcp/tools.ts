@@ -18,6 +18,17 @@ import { detectDatabases } from "../detection/database.js";
 import { resolve, basename } from "node:path";
 import { runSecurityScan } from "../security/scanner.js";
 import { readAudit, auditSummary } from "../security/audit.js";
+import {
+  GIT_STRATEGIES,
+  SERVICE_ACTIONS,
+  requireEnum,
+  requireOptionalEnum,
+  requireServiceName,
+  requireProjectDir,
+  requireCommitSha,
+  requirePort,
+  requireLimit,
+} from "../config/enums.js";
 
 export interface McpToolDefinition {
   name: string;
@@ -167,13 +178,29 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
 ];
 
+/**
+ * Every tool validates its arguments here.
+ *
+ * The `inputSchema` on each definition is advisory: it is sent to the client so a
+ * model can produce sensible arguments, but nothing on the server ever checked
+ * them, because `args` arrived as `Record<string, any>`. So a wrong value did
+ * something arbitrary and reported success — `strategy: "pull"` when `reset` was
+ * documented, `action: "enable"` which matched no branch and quietly did nothing
+ * while returning `{ success: true, ... }`, and `serviceName` handed unvalidated
+ * to `sudo systemctl`.
+ *
+ * Validating at this boundary means a bad value is refused before it reaches git,
+ * systemd or the filesystem.
+ */
 export async function handleMcpToolCall(name: string, args: Record<string, any>): Promise<any> {
   switch (name) {
     case "orkestra_deploy": {
       const report = await deploymentPipeline.execute({
-        dir: args.dir,
+        dir: requireProjectDir(args.dir),
         branch: args.branch,
-        strategy: args.strategy,
+        // git.ts treats any value that is not exactly "reset" as a pull, so an
+        // unrecognised strategy silently ran the wrong git operation.
+        strategy: requireOptionalEnum(args.strategy, GIT_STRATEGIES, "strategy"),
         dryRun: args.dryRun,
         noMigrate: args.noMigrate,
         noRestart: args.noRestart,
@@ -192,7 +219,7 @@ export async function handleMcpToolCall(name: string, args: Record<string, any>)
     }
 
     case "orkestra_inspect": {
-      const targetDir = resolve(args.dir || process.cwd());
+      const targetDir = resolve(requireProjectDir(args.dir));
       const config = await loadConfig(targetDir);
       const existingProject = await getProject(targetDir);
       const resolved = await providerRegistry.resolve(targetDir);
@@ -252,27 +279,36 @@ export async function handleMcpToolCall(name: string, args: Record<string, any>)
     }
 
     case "orkestra_services_action": {
-      const { serviceName, action } = args;
+      // Previously an unrecognised action matched no branch, did nothing at all,
+      // and still returned { serviceName, action, currentStatus } — a caller
+      // asking to "enable" a unit was told it had.
+      const serviceName = requireServiceName(args.serviceName);
+      const action = requireEnum(args.action, SERVICE_ACTIONS, "action");
+
       if (action === "start") await systemd.start(serviceName);
       else if (action === "stop") await systemd.stop(serviceName);
       else if (action === "restart") await systemd.restart(serviceName);
-      else if (action === "reload") await systemd.reload(serviceName);
-      const newStatus = await systemd.getStatus(serviceName);
-      return { serviceName, action, currentStatus: newStatus };
+      else await systemd.reload(serviceName);
+
+      const currentStatus = await systemd.getStatus(serviceName);
+      return { serviceName, action, currentStatus };
     }
 
     case "orkestra_logs": {
-      const projectDir = resolve(args.dir || process.cwd());
+      const projectDir = resolve(requireProjectDir(args.dir));
       const config = await loadConfig(projectDir);
       const projectName = args.project || config?.name || basename(projectDir);
-      const entries = readLogs(projectDir, projectName, { limit: args.limit || 50 });
+      const entries = readLogs(projectDir, projectName, {
+        limit: requireLimit(args.limit, 1000) ?? 50,
+      });
       return { project: projectName, entries };
     }
 
     case "orkestra_health_check": {
       const health = await performDeploymentHealthChecks({
         apiUrl: args.apiUrl,
-        reverbPort: args.reverbPort,
+        reverbPort:
+          args.reverbPort === undefined ? undefined : requirePort(args.reverbPort, "reverbPort"),
         projectName: args.projectName,
         services: { octane: true, queue: true, reverb: true },
       });
@@ -280,11 +316,13 @@ export async function handleMcpToolCall(name: string, args: Record<string, any>)
     }
 
     case "orkestra_rollback": {
-      const projectDir = resolve(args.dir || process.cwd());
+      const projectDir = resolve(requireProjectDir(args.dir));
       const config = await loadConfig(projectDir);
       const projectName = args.project || config?.name || basename(projectDir);
 
-      let targetCommit = args.toCommit;
+      // Constrained to hex so a branch or tag cannot be passed off as a commit,
+      // and so a leading "-" cannot be read by git as an option.
+      let targetCommit = args.toCommit === undefined ? undefined : requireCommitSha(args.toCommit);
       if (!targetCommit) {
         const lastSuccess = await getLastSuccessfulDeployment(projectName);
         if (!lastSuccess?.previousCommit) {
@@ -314,13 +352,13 @@ export async function handleMcpToolCall(name: string, args: Record<string, any>)
 
     case "orkestra_audit":
     case "orkestra_security_scan": {
-      const targetDir = resolve(args.dir || process.cwd());
+      const targetDir = resolve(requireProjectDir(args.dir));
       const report = await runSecurityScan(targetDir, { onlineCve: !args.noOnline });
       return report;
     }
     case "orkestra_audit_history": {
       const summary = await auditSummary();
-      const recent = await readAudit(args.limit || 20);
+      const recent = await readAudit(requireLimit(args.limit, 500) ?? 20);
       return { summary, recent };
     }
 

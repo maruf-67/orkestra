@@ -4,7 +4,12 @@ export const remoteConfigSchema = z.object({
   host: z.string(),
   path: z.string(),
   user: z.string().optional(),
-  port: z.number().int().optional(),
+  // 1-65535, not 1024-65535 like the application ports below. This is the port
+  // we *connect to* over SSH, so the privileged range is entirely legitimate —
+  // 22 is the default and excluding it would be wrong. The app ports are the
+  // ones a non-root systemd unit has to *bind*, where anything under 1024 needs
+  // CAP_NET_BIND_SERVICE and would fail at runtime instead of at validation.
+  port: z.number().int().min(1).max(65535).optional(),
   sshKey: z.string().optional(),
 });
 

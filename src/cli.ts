@@ -1,4 +1,11 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
+import {
+  GIT_STRATEGIES,
+  PROXY_PROVIDERS,
+  LOG_STREAMS,
+  SHELLS,
+  SHARE_PROVIDERS,
+} from "./config/enums.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -69,7 +76,7 @@ export function run() {
     .description("Deploy application (Laravel, Next.js, Nuxt) with git sync, build, systemd services, and Caddy proxy")
     .option("-d, --dir <path>", "Project directory")
     .option("-b, --branch <branch>", "Git branch (default: main)")
-    .option("--strategy <strategy>", "Git strategy: reset or pull (default: reset)")
+    .addOption(new Option("--strategy <strategy>", "Git strategy: reset or pull (default: reset)").choices(GIT_STRATEGIES))
     .option("--dry-run", "Simulate deployment without modifying system state")
     .option("--no-migrate", "Skip database migrations")
     .option("--no-restart", "Skip restarting systemd services")
@@ -82,7 +89,7 @@ export function run() {
     .description("Redeploy without port/Caddy changes: git pull → install (composer/bun) → Laravel o:clear/optimize → restart, Node stop→build→restart")
     .option("-d, --dir <path>", "Project directory")
     .option("-b, --branch <branch>", "Git branch (default: main/.orkestra.yml)")
-    .option("--strategy <strategy>", "Git strategy: reset or pull (default: reset)")
+    .addOption(new Option("--strategy <strategy>", "Git strategy: reset or pull (default: reset)").choices(GIT_STRATEGIES))
     .option("-y, --yes", "Skip interactive prompts")
     .option("--skip-build", "Node: skip build, only restart")
     .option("--skip-optimize", "Laravel: skip optimize:clear/optimize")
@@ -147,7 +154,7 @@ export function run() {
     .option("-d, --dir <path>", "Project directory")
     .option("--domain <domain>", "Domain name")
     .option("--port <port>", "Dev server port", parseInt)
-    .option("--proxy <proxy>", "Proxy provider (caddy, apache, nginx)")
+    .addOption(new Option("--proxy <proxy>", "Proxy provider (auto, caddy, apache, nginx)").choices(PROXY_PROVIDERS))
     .option("-y, --yes", "Skip prompts, use defaults (for CI/CD)")
     .action(init);
 
@@ -212,7 +219,7 @@ export function run() {
     .option("-p, --project <name>", "Project name (lookup from state)")
     .option("-f, --follow", "Follow logs in real-time")
     .option("--since <time>", "Show logs since (e.g., 5m, 1h, 2d, 2024-01-01)")
-    .option("--stream <stream>", "Filter by stream (stdout, stderr)")
+    .addOption(new Option("--stream <stream>", "Filter by stream (stdout, stderr)").choices(LOG_STREAMS))
     .option("-n, --limit <number>", "Number of recent log entries to show", parseInt)
     .option("-l, --list", "List available log files")
     .action(logs);
@@ -256,7 +263,7 @@ export function run() {
   program
     .command("completions")
     .description("Generate shell completion scripts")
-    .option("--shell <shell>", "Shell type (zsh, bash, fish)")
+    .addOption(new Option("--shell <shell>", "Shell type (bash, zsh, fish, sh)").choices(SHELLS))
     .action(completions);
 
   program
@@ -265,7 +272,7 @@ export function run() {
     .argument("[project]", "Project name (optional)")
     .option("-d, --dir <path>", "Project directory")
     .option("-p, --project <name>", "Project name (lookup from state)")
-    .option("--provider <provider>", "Share provider (localtunnel)")
+    .addOption(new Option("--provider <provider>", "Share provider (localtunnel)").choices(SHARE_PROVIDERS))
     .option("--qr", "Show QR code for mobile scanning")
     .option("--copy", "Copy URL to clipboard")
     .option("--json", "Output as JSON")

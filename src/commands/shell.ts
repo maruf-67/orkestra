@@ -4,9 +4,13 @@ import { log, heading } from "../utils/logger.js";
 import { getProject } from "../state/store.js";
 import { loadConfig } from "../config/loader.js";
 import { getPlatform } from "../platform/index.js";
+import { which } from "../utils/exec.js";
+import { SHELL_ARGS, type ShellName } from "../config/enums.js";
 
 interface ShellOptions {
   dir?: string;
+  /** Honoured, and constrained to SHELLS by Commander. */
+  shell?: ShellName;
 }
 
 export async function shell(options: ShellOptions) {
@@ -53,20 +57,48 @@ export async function shell(options: ShellOptions) {
   }
   log.plain("");
 
-  // Get platform shell
+  // Choose the shell.
+  //
+  // `--shell` used to be advertised in the help text and then ignored: this line
+  // read only `process.env.SHELL`, so `orkestra shell --shell fish` opened the
+  // user's login shell and said nothing about it. Commander now constrains the
+  // value to a known set, and it is honoured here.
+  //
+  // Falling back to `$SHELL` and then to the platform default keeps the existing
+  // behaviour for everyone who does not pass the flag.
   const platform = getPlatform();
-  const shell = process.env.SHELL || platform.shell;
-  const shellArgs = platform.shellArgs;
+  const requested = options.shell;
+
+  // Binary to execute, and how to ask it for an interactive session.
+  let shellBinary: string;
+  let shellArgs: string[];
+
+  if (requested) {
+    // Only spawn it if it actually resolves; otherwise say so rather than
+    // starting something that is not there.
+    const resolved = await which(requested);
+    if (!resolved) {
+      throw new Error(
+        `Shell "${requested}" was not found on PATH. ` +
+          `Available: ${Object.keys(SHELL_ARGS).join(", ")}.`,
+      );
+    }
+    shellBinary = resolved;
+    shellArgs = SHELL_ARGS[requested];
+  } else {
+    shellBinary = process.env.SHELL || platform.shell;
+    shellArgs = platform.shellArgs;
+  }
 
   // Spawn interactive shell
-  const child = spawn(shell, shellArgs, {
+  const child = spawn(shellBinary, shellArgs, {
     cwd: projectDir,
     stdio: "inherit",
     env,
   });
 
   // Wait for shell to exit
-  child.on("exit", (code) => {
+  child.on("exit", (code: number | null) => {
     process.exit(code ?? 0);
   });
 }

@@ -17,7 +17,7 @@ bun add -g orkestra
 ### Using npm
 
 ```bash
-bun add -g orkestra
+npm install -g orkestra
 ```
 
 ### Using pnpm
