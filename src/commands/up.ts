@@ -6,6 +6,7 @@ import { detectFramework } from "../detection/framework.js";
 import { getProject, setProjectRunning, isProcessAlive } from "../state/store.js";
 import { loadConfig } from "../config/loader.js";
 import { findAvailablePort, isPortOccupied } from "../state/ports.js";
+import { selectDevPort } from "../deployment/dev-port.js";
 import { registerProjectAuto } from "../utils/registration.js";
 import { writeLog, getLogPath } from "../utils/logger-file.js";
 import { healthMonitor } from "../utils/health.js";
@@ -164,8 +165,15 @@ export async function up(options: UpOptions) {
   // Load config
   const config = await loadConfig(projectDir);
 
-  // Port priority: CLI flag > config > existing state > auto-detect
-  let port = options.port || config?.port || existing?.port;
+  // Port priority lives in deployment/dev-port.ts so `orkestra up` and the health
+  // monitor's auto-restart cannot disagree — they did, and the monitor restarted
+  // the app onto a different port than up() had served. It is reassigned after
+  // auto-registration, which may choose the port.
+  let port = selectDevPort({
+    cliPort: options.port,
+    configPort: config?.port,
+    statePort: existing?.port,
+  }).port;
 
   // Auto-register if not registered
   let domain = existing?.domain;
@@ -207,21 +215,18 @@ export async function up(options: UpOptions) {
     process.exit(1);
   }
 
-  // Ensure port is set (priority: CLI > config > existing > framework default)
+  // The framework default is the last configured source, so it is only consulted
+  // when nothing else supplied a port.
   if (!port) {
-    port = config?.port || framework.port;
+    port = selectDevPort({ frameworkPort: framework.port }).port;
   }
 
-  // Only find available port if the configured port is actually in use by ANOTHER process
-  // (not by our own stale PID)
+  // Only move if the port is genuinely held by something else — never merely
+  // because this project's own recorded port looks occupied to a naive scan.
+  // `forProjectPath` is what lets the project reclaim its own port.
   const originalPort = port;
-  const isPortInUse = await isPortOccupied(port);
-  if (isPortInUse) {
+  if (await isPortOccupied(port)) {
     log.warn(`Port ${port} is in use by another process`);
-    // Pass projectDir so this project can reclaim the port already recorded for
-    // it. Without it, state reports the project's own port as taken by someone
-    // else and the app silently moves to a different port than the one
-    // registered, which is how local ports drift out of sync with .orkestra.yml.
     port = await findAvailablePort(port, projectDir);
     log.info(`Using alternative port: ${port}`);
 

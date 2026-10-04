@@ -5,6 +5,117 @@ All notable changes to Orkestra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2026-10-04
+
+Two silent-failure classes closed, both found by rebuilding the knowledge graph
+and then verifying against real behaviour rather than by reading code.
+
+### Fixed
+
+- **`loadConfig` silently discarded any invalid `.orkestra.yml`.** It wrapped
+  read, YAML parse and schema validation in a single `catch` and returned `null`,
+  so a config that existed but failed validation was indistinguishable from one
+  that was not there. `commands/up.ts` does `port = config?.port ||
+  framework.port`, so any bad field sent the project to the framework default
+  with nothing printed:
+
+      .orkestra.yml   port: "8022"      (quoted — an ordinary YAML slip)
+      loadConfig()    -> null, silent
+      up() binds      -> 3000, not 8022
+
+  No message, no warning, no non-zero exit. The three earlier port fixes all
+  assumed the config was being read correctly; it was not. This was a live path to
+  the drift, and it depended on whether someone had quoted a value in the YAML —
+  which is why the symptom looked random. Absent, unparseable and invalid are now
+  distinguished, and an invalid config reports which fields were wrong and that
+  their values are being ignored. The return value is unchanged, so callers still
+  degrade rather than crash.
+
+- **`up()` and the health monitor resolved different ports.** They each had their
+  own precedence chain, and the operands differed:
+
+      commands/up.ts    options.port || config?.port || existing?.port || ...
+      utils/health.ts   config?.port || framework.port
+
+  For a project whose `.orkestra.yml` omits `port` — the normal shape once
+  `freezeAgainstState` puts the deployed port into state — `up()` served the state
+  port while the monitor's auto-restart came back on the framework default, and
+  because the monitor had no proxy reconfiguration, Caddy kept proxying to the
+  old port. Demonstrated:
+
+      state port            8022
+      .orkestra.yml port    (absent)
+      framework default     3000
+      up() binds            8022
+      monitor restarts onto 3000   -> Caddy still points at 8022 -> 502
+
+  Both now call `selectDevPort()` / `ensurePortAvailable()` from the new
+  `deployment/dev-port.ts`, so the precedence cannot drift apart again. The
+  monitor also takes the project's registered name from state rather than falling
+  back to the directory basename.
+
+- **No option enforced the values it advertised.** `.choices()` appeared zero
+  times in `cli.ts`. Commander only validates via `new Option(...).choices(...)`,
+  and `.option()` returns the Command, not the Option, so there was nothing to
+  chain onto. All of these failed silently:
+
+  | input | previous behaviour |
+  |---|---|
+  | `--strategy resset` | `git.ts` does `if (strategy === "reset") { reset --hard } else { git pull }`, so the typo ran `git pull` |
+  | `--stream err` | matched no entries; the command printed nothing |
+  | `--provider foo` | `detectShareProvider` fell through to auto-detect and silently picked a different provider |
+  | `--shell fish` | accepted by Commander, then discarded — `shell.ts` read only `$SHELL`. The option was in the help text and did nothing |
+
+  Six options are now constrained via `addOption(new Option(...).choices(...))`,
+  and `--shell` is honoured with per-shell arguments and a clear error when the
+  binary is not on PATH.
+
+- **MCP tools validated nothing.** All 12 declared an `inputSchema`, but that is
+  advisory: it is sent to the client so a model produces reasonable arguments. The
+  server took `Record<string, any>` and never checked them. Worst case,
+  `orkestra_services_action`'s if/else chain had no `else`, so `action: "enable"`
+  performed nothing and still returned `{ serviceName, action, currentStatus }` —
+  a caller asking to enable a unit was told it had. `serviceName` also went
+  unvalidated into `sudo systemctl`, and `toCommit` unvalidated into `git
+  checkout`. Since an MCP client is a language model, these are influenced
+  strings. `serviceName` must now be a unit name, `toCommit` a hex sha (which
+  also stops a leading `-` being read by git as an option), `dir` absolute, and
+  `reverbPort` / `limit` range-checked.
+
+- **`remote.port` had no bounds at all.** Now 1-65535, deliberately *not*
+  1024-65535 like the application ports: we connect to it over SSH, so 22 is
+  legitimate, unlike a port a non-root systemd unit has to bind.
+
+- **`docs/installation.md`**: `### Using npm` contained `bun add -g orkestra`.
+
+### Added
+
+- `src/config/enums.ts` — the controlled vocabularies in one place, so the CLI and
+  the MCP server cannot disagree, with `requireServiceName`, `requireCommitSha`,
+  `requireProjectDir`, `requirePort` and `requireLimit`.
+- `src/deployment/dev-port.ts` — the single dev-port resolver shared by `up()` and
+  the health monitor.
+
+### Tests
+
+379 → 408. New: `config/loader-silent-failure` (13), `config/enums` (36),
+`mcp/tool-validation` (26), `cli/enum-boundary-guard` (11),
+`deployment/dev-port` (29).
+
+Two structural guards, both verified non-vacuous by reintroducing the bug and
+confirming the failure: `cli/enum-boundary-guard` reads `cli.ts` and fails if an
+option advertising a choice is ever unconstrained; `deployment/dev-port` fails if
+either call site re-implements the precedence chain or stops consulting state.
+
+Coverage 26.24% → 28.02% statements. `src/mcp/tools.ts` 8.1% → 62.16%;
+`src/config/loader.ts` → 85%.
+
+**Still uncovered:** `commands/up.ts` (426 lines) and `utils/health.ts` (319 lines)
+remain at 0%. This release makes their *port decision* shared and tested, but the
+surrounding orchestration — spinners, process spawning, proxy reconfiguration — is
+not. That needs an injectable process/filesystem seam and is the honest remaining
+gap, unchanged by this release.
+
 ## [1.0.10] - 2026-10-04
 
 Port-drift hardening, a shell-injection fix, an honest coverage gate, and 282

@@ -5,7 +5,7 @@ import { resolve, basename } from "node:path";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../config/loader.js";
 import { detectFramework } from "../detection/framework.js";
-import { findAvailablePort, isPortOccupied } from "../state/ports.js";
+import { selectDevPort, ensurePortAvailable } from "../deployment/dev-port.js";
 
 const MAX_RESTART_ATTEMPTS = 3;
 const RESTART_DELAY_MS = 2000;
@@ -136,7 +136,12 @@ export class HealthMonitor {
   private async restartProcess(projectPath: string): Promise<void> {
     try {
       const config = await loadConfig(projectPath);
-      const projectName = config?.name || basename(projectPath);
+
+      // Registered state is the authority for the project's name and port. Using
+      // only the config meant an absent or invalid .orkestra.yml silently renamed
+      // the project to its directory basename and moved it off its recorded port.
+      const state = await getProject(projectPath);
+      const projectName = state?.name || config?.name || basename(projectPath);
 
       // Detect framework
       const framework = await detectFramework(projectPath);
@@ -162,21 +167,38 @@ export class HealthMonitor {
 
       // Resolve the port for the restart.
       //
-      // This used to call findAvailablePort unconditionally, which re-scanned
-      // the range on every auto-restart and, because it was called without a
-      // project path, treated the port recorded for this project in state as
-      // belonging to somebody else. A health-triggered restart therefore moved
-      // the app to a different port than .orkestra.yml records, breaking
-      // bookmarks, .env and the Caddy mapping.
+      // This must agree exactly with what `orkestra up` decided, or a restart
+      // moves the app and Caddy keeps proxying to where it used to be. It did
+      // disagree: up() consulted the port recorded in orkestra's state, this used
+      // only `config?.port || framework.port`. For a project whose .orkestra.yml
+      // omits `port` — normal once freezeAgainstState has put the deployed port in
+      // state — up() served the state port and the monitor restarted onto the
+      // framework default.
       //
-      // Now the configured port is preferred whenever it is genuinely free or
-      // already belongs to this project, and the scan only runs on a real
-      // conflict.
-      const configuredPort = config?.port || framework.port;
-      let port = configuredPort;
-      const occupied = await isPortOccupied(configuredPort);
-      if (occupied) {
-        port = await findAvailablePort(configuredPort, projectPath);
+      // Both now call selectDevPort()/ensurePortAvailable() from
+      // deployment/dev-port.ts, so the precedence cannot drift apart again.
+      const portDecision = await ensurePortAvailable(
+        selectDevPort({
+          configPort: config?.port,
+          statePort: state?.port,
+          frameworkPort: framework.port,
+        }),
+        projectPath,
+      );
+      const port = portDecision.port;
+
+      if (portDecision.moved) {
+        // The old comment here claimed the port was preserved, but nothing
+        // re-pointed Caddy, so a moved restart left the proxy aimed at a dead
+        // port. Say so plainly rather than failing silently.
+        writeLog(projectPath, projectName, {
+          timestamp: new Date(),
+          stream: "stderr",
+          message:
+            `[Restart] Port ${portDecision.requestedPort} is held by another process; ` +
+            `restarting on ${port}. Any proxy still pointing at ` +
+            `${portDecision.requestedPort} will now return 502.`,
+        });
       }
 
       // Spawn process
