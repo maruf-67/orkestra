@@ -5,6 +5,78 @@ All notable changes to Orkestra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.12] - 2026-10-04
+
+Coverage of the two command paths the port-drift report actually travels through,
+plus a self-inflicted regression found while doing it.
+
+### Fixed
+
+- **Five error messages pointed at a command that no longer exists.** Deleting
+  `src/commands/register.ts` in 1.0.10 was correct — it had zero importers and was
+  never registered in `cli.ts`. But the command *name* was still in user-facing
+  guidance, so the deletion turned real errors into advice for a command users
+  could not run:
+
+      $ orkestra list
+      No projects registered.
+      Run `orkestra register` in a project directory to get started.
+      error: unknown command 'register'
+
+  `list.ts`, `up.ts`, `status.ts`, `restart.ts` and `open.ts` now name
+  `orkestra init`. The file was genuinely dead; the name was not.
+
+### Added
+
+- `test/cli/command-reference-guard.test.ts` — separates the two questions that
+  were conflated: is the module dead, and is the name still advised. It parses the
+  registered command names out of `cli.ts` and fails if any command message names
+  one that is not registered, plus the inverse check that no module in
+  `src/commands/` is left unwired. Scoped to backticked references, since matching
+  bare `orkestra <word>` also matches English — "the .orkestra directory".
+- `test/utils/health-monitor.test.ts` (25) — the auto-restart, driven through the
+  real `HealthMonitor` with only process spawning, the state store and the port
+  probes mocked. `utils/health.ts` 0% → 75.7%.
+- `test/commands/up.test.ts` (33) — `orkestra up`, the command in the drift report
+  and the largest uncovered file in the project. Real timers throughout: `up()`
+  schedules nothing, so the real `getStartCommand` reads a real `package.json`.
+  `commands/up.ts` 0% → 75.71%.
+
+### Tests
+
+433 → 472. Coverage 29.65% → **32.86%** statements, the highest of the project.
+Ratchet raised 27/26/33/27 → 30/28/35/30.
+
+The mise environment path is now covered explicitly, since mise is this
+deployment's toolchain and `up()` sources the child's environment from
+`mise env` rather than from a `.env` file: JSON injection, the export-format
+fallback when `-j` is unsupported, non-string values ignored, mise's `PATH`
+overridden by the resolved port, and a clean start when mise is absent. Also
+pinned: a bare framework binary is wrapped per lockfile — `bun.lockb` → `bun`,
+`pnpm-lock.yaml` → `pnpm exec`, neither → `npx --yes`.
+
+Every structural guard added this session was verified non-vacuous by reintroducing
+the bug and confirming the failure.
+
+### Notes for whoever tests this next
+
+Two things cost real time here and will cost the next person the same:
+
+1. **`node:fs/promises` does not settle while vitest fake timers are active.** A
+   real `readFile` never resolves — not under `advanceTimersByTimeAsync`, not
+   under `nextTick`. It settles only once the real event loop turns. So any code
+   that touches disk inside a timer callback deadlocks under fake timers. The
+   health-monitor tests supply `startCommand` via config to avoid it.
+2. **`getStartCommand` has no framework that falls through to `null` without
+   touching disk.** Every framework it knows either has a hardcoded command (go,
+   rust, fastapi, flask, django) or reads a project file.
+
+**Still uncovered:** `commands/` remains largely untested — `down.ts` (203),
+`deploy.ts` (136), `redeploy.ts` (266), `status.ts` (250), `start.ts` (339),
+`check.ts` (226), `services.ts`, `monitor.ts` and `deployment/health.ts` are all
+still at 0%. They are sudo/systemd-bound orchestration and need the same
+treatment `up.ts` just got. `mcp/server.ts` is also at 0%.
+
 ## [1.0.11] - 2026-10-04
 
 Two silent-failure classes closed, both found by rebuilding the knowledge graph
