@@ -110,7 +110,7 @@ export async function up(options: UpOptions) {
 
     if (projects.length === 0) {
       log.info("No projects registered.");
-      log.dim("Run `orkestra register` in a project directory to get started.");
+      log.dim("Run `orkestra init` in a project directory to get started.");
       return;
     }
 

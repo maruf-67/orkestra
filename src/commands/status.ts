@@ -152,7 +152,7 @@ export async function status(options: StatusOptions) {
     if (!options.json) {
       heading("Project Status");
       log.info("No projects registered.");
-      log.dim("Run `orkestra register` in a project directory to get started.");
+      log.dim("Run `orkestra init` in a project directory to get started.");
     }
     return;
   }

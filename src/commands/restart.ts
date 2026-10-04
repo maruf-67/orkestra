@@ -14,7 +14,7 @@ export async function restart(options: RestartOptions) {
   const project = await getProject(projectDir);
 
   if (!project) {
-    log.error("Project not registered. Run `orkestra register` first.");
+    log.error("Project not registered. Run `orkestra init` in the project directory first.");
     process.exit(1);
   }
 
