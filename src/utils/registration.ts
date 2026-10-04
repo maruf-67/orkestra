@@ -6,6 +6,7 @@ import { detectProxy } from "../detection/proxy.js";
 import { HostsFileProvider } from "../providers/hosts/hosts.js";
 import { registerProject, ProjectState } from "../state/store.js";
 import { findAvailablePort } from "../state/ports.js";
+import { selectDevPort } from "../deployment/dev-port.js";
 import { loadConfig } from "../config/loader.js";
 import { OrkestraConfig } from "../config/schema.js";
 import { addAllowedHost } from "./host-config.js";
@@ -157,17 +158,34 @@ export async function registerProjectAuto(
   // Resolve domain
   const domain = options?.domain || config?.domain || `${projectName}.dev.com`;
 
-  // Resolve port — if explicit --port given, use it verbatim (no bump even if OS shows in-use; same-project restart will free it)
-  let port = options?.port || config?.port;
-  if (!port) {
-    const detectedPort = await detectPortFromProject(projectDir, framework?.name || "");
-    port = detectedPort || framework?.port || 3000;
-  }
+  // Resolve port.
+  //
+  // Precedence and validity come from deployment/dev-port.ts, the same resolver
+  // up.ts, start.ts and the health monitor use. This function previously did
+  // `options?.port || config?.port` inline and, failing that, project-file
+  // detection. It had no validity checking at all, so a config carrying `port: 0`
+  // or a quoted value registered the project on a nonsense port. Passing the
+  // detected value as the framework-level source keeps project-file detection in
+  // the chain without duplicating the chain itself.
+  //
+  // If an explicit --port was given, use it verbatim: the OS may still show it
+  // in use because this same project is shutting down, so only allocation to
+  // *other* projects is checked.
+  const detectedPort = options?.port || config?.port
+    ? undefined
+    : (await detectPortFromProject(projectDir, framework?.name || "")) ?? framework?.port;
+
+  let { port } = selectDevPort({
+    cliPort: options?.port,
+    configPort: config?.port,
+    frameworkPort: detectedPort,
+  });
+
   if (options?.port) {
     // explicit request — only check allocation to *other* projects, skip OS availability bump
-    const { isPortAllocated } = await import("../state/store.js");
+    const { isPortAllocated, getProject: currentProject } = await import("../state/store.js");
     if (await isPortAllocated(port)) {
-      const cur = await (await import("../state/store.js")).getProject(projectDir);
+      const cur = await currentProject(projectDir);
       if (!cur || cur.port !== port) {
         port = await findAvailablePort(port, projectDir);
       }

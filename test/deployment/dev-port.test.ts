@@ -196,17 +196,7 @@ describe("the drift regression, stated directly", () => {
   });
 });
 
-describe("structural guard: both call sites share one resolver", () => {
-  const up = read("src/commands/up.ts");
-  const health = read("src/utils/health.ts");
-
-  /**
-   * Strip comments before matching.
-   *
-   * These files document the bug they used to have, which means they quote the
-   * offending expression in prose. A guard has to look at code, not commentary,
-   * or documenting the fix would trip it.
-   */
+describe("structural guard: every call site shares one resolver", () => {
   const stripComments = (src: string) =>
     src
       .split("\n")
@@ -220,45 +210,71 @@ describe("structural guard: both call sites share one resolver", () => {
       })
       .join("\n");
 
-  const upCode = stripComments(up);
-  const healthCode = stripComments(health);
+  const code = (rel: string) => stripComments(read(rel));
 
-  it("up.ts imports selectDevPort from deployment/dev-port.js", () => {
-    expect(upCode).toMatch(/from "\.\.\/deployment\/dev-port\.js"/);
-    expect(upCode).toMatch(/selectDevPort\(/);
+  /**
+   * Every module that decides which port a server binds.
+   *
+   * There were four copies of this decision. up.ts and health.ts were found
+   * disagreeing, which is how the drift happened; start.ts is a near-copy of
+   * up.ts and had the same chain verbatim; registration.ts had its own with no
+   * validity checking at all. Listing them explicitly means a fifth copy in a new
+   * command has to be added here deliberately.
+   */
+  const RESOLVERS = [
+    "src/commands/up.ts",
+    "src/commands/start.ts",
+    "src/utils/health.ts",
+    "src/utils/registration.ts",
+  ];
+
+  it("every resolver imports from deployment/dev-port.js", () => {
+    for (const f of RESOLVERS) {
+      expect(code(f), `${f} does not use the shared resolver`).toMatch(
+        /from "\.\.\/deployment\/dev-port\.js"/,
+      );
+      expect(code(f), `${f} does not call selectDevPort()`).toMatch(/selectDevPort\(/);
+    }
   });
 
-  it("health.ts imports the same resolver", () => {
-    expect(healthCode).toMatch(/from "\.\.\/deployment\/dev-port\.js"/);
-    expect(healthCode).toMatch(/selectDevPort\(/);
-    expect(healthCode).toMatch(/ensurePortAvailable\(/);
+  it("no module re-implements the precedence chain inline", () => {
+    // The divergence was literally this expression in two files with different
+    // operands. Any reappearance means a new copy of the decision.
+    const chain = /config\?\.port\s*\|\|\s*(existing|framework)\??\.?port/;
+    for (const f of RESOLVERS) {
+      expect(chain.test(code(f)), `${f} re-implements the precedence chain`).toBe(false);
+    }
   });
 
-  it("neither file re-implements the precedence chain", () => {
-    // This is the guard that matters. The divergence was literally this
-    // expression existing in two files with different operands.
-    const pattern = /config\?\.port\s*\|\|\s*framework\.port/;
-    expect(pattern.test(upCode), "up.ts still has its own precedence chain").toBe(false);
-    expect(pattern.test(healthCode), "health.ts still has its own precedence chain").toBe(false);
+  it("up.ts, start.ts and health.ts all consult the state port", () => {
+    // Without `statePort` a resolver ignores the port recorded in state, which
+    // is the original bug. registration.ts legitimately does not: a project is
+    // being registered for the first time, so there is no state yet.
+    for (const f of ["src/commands/up.ts", "src/commands/start.ts", "src/utils/health.ts"]) {
+      expect(code(f), `${f} does not consult the state port`).toMatch(/statePort:/);
+    }
   });
 
-  it("health.ts consults the registered state port", () => {
-    // Without `statePort` the monitor ignores state, which is the original bug.
-    expect(healthCode).toMatch(/statePort:\s*state\?\.port/);
+  it("registration.ts keeps its own conflict policy but not its own precedence", () => {
+    const src = code("src/utils/registration.ts");
+    // An explicit --port must not be bumped for an OS-level conflict, because the
+    // same project may be shutting down. That policy is deliberate and stays.
+    expect(src).toMatch(/options\?\.port/);
+    expect(src).toMatch(/isPortAllocated/);
   });
 
   it("health.ts no longer imports the port helpers directly", () => {
     // It should go through the resolver, not reach past it.
-    expect(healthCode).not.toMatch(
+    expect(code("src/utils/health.ts")).not.toMatch(
       /import \{[^}]*findAvailablePort[^}]*\} from "\.\.\/state\/ports\.js"/,
     );
   });
 
   it("every findAvailablePort call site passes a project path", () => {
     // The same invariant the port-affinity guard enforces elsewhere.
-    const files = ["src/commands/up.ts", "src/deployment/dev-port.ts"];
+    const files = [...RESOLVERS, "src/deployment/dev-port.ts"];
     for (const f of files) {
-      const src = stripComments(read(f));
+      const src = code(f);
       for (const m of src.matchAll(/findAvailablePort\(([^)]*)\)/g)) {
         const args = m[1];
         if (/forProjectPath|projectDir|^\s*$/.test(args)) continue; // declaration site

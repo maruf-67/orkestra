@@ -17,9 +17,16 @@ interface DownOptions {
  * Get all descendant PIDs of a process recursively.
  */
 async function getDescendants(pid: number): Promise<number[]> {
+  // A non-integer pid would be read by ps as an option rather than an argument.
+  if (!Number.isInteger(pid) || pid <= 0) return [];
   try {
-    const { execSync } = await import("node:child_process");
-    const result = execSync(`ps -o pid --no-headers --ppid ${pid}`, { encoding: "utf-8" });
+    // execFileSync passes argv straight through, so there is no shell to
+    // interpret the value. execSync with a template literal was handing the pid
+    // to /bin/sh.
+    const { execFileSync } = await import("node:child_process");
+    const result = execFileSync("ps", ["-o", "pid", "--no-headers", "--ppid", String(pid)], {
+      encoding: "utf-8",
+    });
     const children = result
       .split("\n")
       .map((line) => parseInt(line.trim(), 10))
@@ -187,8 +194,8 @@ export async function down(options: DownOptions) {
   // Fallback: kill anything still listening on the project's port
   if (project.port) {
     try {
-      const { execSync } = await import("node:child_process");
-      const result = execSync(`lsof -ti :${project.port}`, { encoding: "utf-8" });
+      const { execFileSync } = await import("node:child_process");
+      const result = execFileSync("lsof", ["-ti", `:${project.port}`], { encoding: "utf-8" });
       const pids = result.split("\n").map((p) => parseInt(p.trim(), 10)).filter((p) => !isNaN(p));
       if (pids.length > 0) {
         log.dim(`Force-killing ${pids.length} process(es) still on port ${project.port}`);

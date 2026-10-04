@@ -6,6 +6,7 @@ import { detectFramework } from "../detection/framework.js";
 import { getProject, setProjectRunning, isProcessAlive } from "../state/store.js";
 import { loadConfig } from "../config/loader.js";
 import { findAvailablePort, isPortOccupied } from "../state/ports.js";
+import { selectDevPort } from "../deployment/dev-port.js";
 import { registerProjectAuto } from "../utils/registration.js";
 import { writeLog, getLogPath } from "../utils/logger-file.js";
 import { healthMonitor } from "../utils/health.js";
@@ -91,7 +92,15 @@ export async function start(options: StartOptions) {
     process.exit(1);
   }
 
-  let port = options.port || config?.port || existing?.port;
+  // Port priority lives in deployment/dev-port.ts. This command is a near-copy of
+  // up.ts and carried its own precedence chain, which is how up.ts and the health
+  // monitor came to disagree about which port a project was on. Three copies of
+  // this decision is two too many.
+  let port = selectDevPort({
+    cliPort: options.port,
+    configPort: config?.port,
+    statePort: existing?.port,
+  }).port;
   let domain = existing?.domain;
 
   if (!existing) {
@@ -115,8 +124,9 @@ export async function start(options: StartOptions) {
     process.exit(1);
   }
 
+  // The framework default is the last configured source.
   if (!port) {
-    port = config?.port || framework.port;
+    port = selectDevPort({ frameworkPort: framework.port }).port;
   }
 
   const originalPort = port;
@@ -179,9 +189,12 @@ export async function start(options: StartOptions) {
       }
     }
 
-    const { execSync } = await import("node:child_process");
+    // execFileSync, not execSync. Concatenating into one string hands the whole
+    // thing to a shell, which is the pattern that was removed from run() in
+    // 1.0.10; reintroducing it here for the build step would undo that.
+    const { execFileSync } = await import("node:child_process");
     try {
-      execSync(buildCmd + " " + buildArgs.join(" "), {
+      execFileSync(buildCmd, buildArgs, {
         cwd: projectDir,
         stdio: "inherit",
         env: { ...process.env, PORT: String(port), SERVER_PORT: String(port) },

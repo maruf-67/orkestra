@@ -1,6 +1,6 @@
 {
   "name": "orkestra",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "A cross-platform development workspace manager",
   "type": "module",
   "bin": {

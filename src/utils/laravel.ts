@@ -2,6 +2,7 @@ import { resolve, join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { log } from "./logger.js";
+import { execFileSync } from "node:child_process";
 
 export interface SyncLaravelOptions {
   port: number;
@@ -252,6 +253,48 @@ export async function syncLaravelProject(
 }
 
 /**
+ * `readlink -f /proc/<pid>/cwd`, or "" when it cannot be read.
+ *
+ * The original was `execSync(\`readlink -f /proc/${pid}/cwd 2>/dev/null || true\`)`,
+ * which needed a shell purely to swallow the error and the non-zero exit. Doing
+ * both here means the pid never crosses a command line, and a malformed pid can
+ * only produce "" rather than a shell error.
+ */
+function readlinkOrEmpty(pid: number): string {
+  if (!Number.isInteger(pid) || pid <= 0) return "";
+  try {
+    return String(
+      execFileSync("readlink", ["-f", `/proc/${pid}/cwd`], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }),
+    ).trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * `lsof -ti :<port>`, or "" when nothing is listening or lsof is unavailable.
+ *
+ * As above: the `2>/dev/null || true` in the original existed only because a
+ * shell was in the way.
+ */
+function lsofPidsOrEmpty(port: number | undefined): string {
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) return "";
+  try {
+    return String(
+      execFileSync("lsof", ["-ti", `:${port}`], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }),
+    );
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Stops any lingering Laravel Octane or RoadRunner processes for the given project directory.
  */
 export async function cleanupLaravelProcesses(
@@ -285,9 +328,10 @@ export async function cleanupLaravelProcesses(
 
     for (const pid of pids) {
       try {
-        const cwd = execSync(`readlink -f /proc/${pid}/cwd 2>/dev/null || true`, {
-          encoding: "utf-8",
-        }).trim();
+        // `2>/dev/null || true` needed a shell to suppress the error and swallow
+        // the non-zero exit. With execFileSync both are handled in JS instead,
+        // so the value never reaches a command line.
+        const cwd = readlinkOrEmpty(pid);
         if (cwd === resolvedDir) {
           try { process.kill(pid, "SIGKILL"); } catch {}
         }
@@ -295,9 +339,7 @@ export async function cleanupLaravelProcesses(
     }
 
     if (port) {
-      const portPids = execSync(`lsof -ti :${port} 2>/dev/null || true`, {
-        encoding: "utf-8",
-      })
+      const portPids = lsofPidsOrEmpty(port)
         .split("\n")
         .map((p) => parseInt(p.trim(), 10))
         .filter((p) => !isNaN(p));
