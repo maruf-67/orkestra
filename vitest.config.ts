@@ -45,10 +45,10 @@ export default defineConfig({
       // higher standard individually — see test/deployment/pipeline.test.ts
       // (100% statements) and test/deployment/git.test.ts (93.75%).
       thresholds: {
-        statements: 27,
-        branches: 26,
-        functions: 33,
-        lines: 27,
+        statements: 30,
+        branches: 28,
+        functions: 35,
+        lines: 30,
       },
     },
   },
