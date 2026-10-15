@@ -273,13 +273,30 @@ export class CaddyProxy implements ProxyProvider {
       // The adapter is stated explicitly: the staged filename does not end in
       // a form Caddy reliably auto-detects, and without this Caddy parses the
       // file as JSON and rejects every config.
-      const res = await run("caddy", [
-        "validate",
-        "--adapter",
-        "caddyfile",
-        "--config",
-        stagedPath,
-      ]);
+      //
+      // `sudo` is required, not incidental. `caddy validate` is not a pure parse
+      // check — it provisions the config, which means loading every TLS
+      // certificate the file references. Validation runs against the whole
+      // Caddyfile, not just the generated block, and a real-world Caddyfile
+      // carries lines like
+      //
+      //     tls /etc/caddy/certs/api.dev.com.pem /etc/caddy/certs/api.dev.com-key.pem
+      //
+      // where the private keys are mode 0600 owned by the caddy service user.
+      // Invoked as an ordinary user, validation fails with
+      //
+      //     loading certificates: open /etc/caddy/certs/...-key.pem: permission denied
+      //
+      // and reports a perfectly valid Caddyfile as invalid. Validating with the
+      // same privileges used to write it is the only consistent choice, and we
+      // already require sudo for the write.
+      //
+      // This is safe: `validate` loads and discards, changing no service state.
+      const res = await run(
+        "caddy",
+        ["validate", "--adapter", "caddyfile", "--config", stagedPath],
+        { sudo: !isWindows() },
+      );
       return {
         ok: res.exitCode === 0,
         reason: res.exitCode === 0 ? undefined : "invalid",

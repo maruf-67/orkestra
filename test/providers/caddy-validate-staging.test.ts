@@ -196,6 +196,50 @@ describe.runIf(canTestPermissions)("an unwritable config directory", () => {
   });
 });
 
+describe("validation runs with the same privileges as the write", () => {
+  it("invokes `caddy validate` with sudo on Unix", async () => {
+    // `caddy validate` is not a pure parse check — it provisions the config,
+    // which loads every TLS certificate the file references. Validation runs
+    // against the whole Caddyfile, and a real one carries lines like
+    //
+    //   tls /etc/caddy/certs/api.dev.com.pem /etc/caddy/certs/api.dev.com-key.pem
+    //
+    // with the private keys mode 0600 owned by the caddy service user. Run as an
+    // ordinary user it fails with
+    //
+    //   loading certificates: open /etc/caddy/certs/...-key.pem: permission denied
+    //
+    // and reports a valid Caddyfile as invalid. Since we already need sudo to
+    // write the config, validating with it is the only consistent choice — and
+    // `validate` loads and discards, so it changes no service state.
+    const seen: Array<{ args: string[]; opts: any }> = [];
+    vi.mocked(exec.run).mockImplementation(
+      async (_c: string, args: string[] = [], opts: any = {}) => {
+        if (args[0] === "validate") {
+          seen.push({ args, opts });
+          return { stdout: "Valid configuration", stderr: "", exitCode: 0 };
+        }
+        return { stdout: "active", stderr: "", exitCode: 0 };
+      },
+    );
+
+    await caddy.register({ domain: "pet.test", port: 8008, ssl: false });
+
+    const validateCall = seen.find((s) => s.args[0] === "validate");
+    expect(validateCall).toBeDefined();
+    expect(validateCall!.opts?.sudo).toBe(true);
+  });
+
+  it("still writes the config when validation passes", async () => {
+    await caddy.register({ domain: "pet.test", port: 8008, ssl: true });
+
+    const written = await readFile(caddyfile, "utf-8");
+    expect(written).toMatch(/pet\.test/);
+    // A .test domain gets the built-in CA rather than a public certificate.
+    expect(written).toMatch(/tls internal/);
+  });
+});
+
 describe("a writable directory still works", () => {
   it("validates and writes the new block", async () => {
     await caddy.register({ domain: "pet.dev.com", port: 8008, ssl: false });

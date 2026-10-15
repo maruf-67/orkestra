@@ -96,13 +96,34 @@ paths: a public domain yields the auto-HTTPS block, a `.test` domain yields
 
 Suite 508 → 515. Honest coverage 35.41% → **37.95%** statements.
 
+- **`caddy validate` needs the caddy service user's privileges, and did not have
+  them.** With the staging bug fixed, the next failure became visible:
+
+      Error: loading http app module: provision http: getting tls app: loading
+      certificates: open /etc/caddy/certs/7sg.dev.com-key.pem: permission denied
+
+  `caddy validate` is **not a pure parse check** — it provisions the config, which
+  loads every TLS certificate the file references. Validation runs against the
+  whole Caddyfile, not just the generated block, and a real one carries lines
+  added outside orkestra:
+
+      tls /etc/caddy/certs/api.dev.com.pem /etc/caddy/certs/api.dev.com-key.pem
+
+  where the private keys are mode `0600` owned by `caddy`. Invoked as an ordinary
+  user, validation failed with `permission denied` and reported a perfectly valid
+  Caddyfile as invalid.
+
+  Validation now runs with `sudo`, matching the privilege used to write the file.
+  This is safe: `validate` loads and discards, changing no service state.
+
 ### Note
 
-Validation now stages through sudo, so `orkestra init` and `deploy` may prompt
-for a password twice on the Caddy write path rather than once. That is the price
-of validating a candidate in the same directory as the real config, which is what
-keeps relative `import` statements working. Rejecting a valid config is a far
-worse outcome than an extra prompt.
+The Caddy write path now needs sudo three times — stage, validate, write — so
+`orkestra init` and `deploy` may prompt for a password more than once. That is the
+price of validating a candidate in the same directory as the real config, under the
+same privileges, which is what keeps relative `import` statements working and lets
+validation read the certificates the file references. Rejecting a valid config is a
+far worse outcome than an extra prompt.
 
 ## [1.0.13] - 2026-10-04
 

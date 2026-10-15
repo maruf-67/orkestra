@@ -46,7 +46,12 @@ vi.mock("../../src/utils/exec.js", async (importOriginal) => {
     // Keep `caddy validate` real; only stub the privileged service reload.
     run: async (cmd: string, args: string[] = [], opts: any = {}) => {
       if (cmd === "caddy") {
-        return actual.run(cmd, args, opts);
+        // The real binary is used, but without sudo. Validate is invoked with
+        // sudo in production because it provisions TLS certificates that only
+        // root can read; the sandbox has no such certificates and no
+        // passwordless sudo, so the privilege is dropped here and nothing else
+        // about the call changes.
+        return actual.run(cmd, args, { ...opts, sudo: false });
       }
       if (cmd === "systemctl") return { stdout: "active", stderr: "", exitCode: 0 };
       return { stdout: "", stderr: "", exitCode: 0 };
