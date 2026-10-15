@@ -5,6 +5,138 @@ All notable changes to Orkestra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.14] - 2026-10-11
+
+`orkestra init` could not register any project. Reported from the field; the
+cause was three bugs stacked on top of each other.
+
+### Fixed
+
+- **`Generated Caddyfile is invalid; nothing was changed. Error: reading config
+  file: open /etc/caddy/Caddyfile.orkestra-candidate: no such file or
+  directory`**
+
+  Nothing was wrong with the generated Caddyfile. Three separate defects:
+
+  1. `CaddyProxy.validate()` staged its candidate config with a plain
+     `writeFile`, while the real config is written through `sudoWriteFile`.
+     `/etc/caddy` is root-owned, so staging failed with `EACCES` and the
+     candidate was never created.
+  2. That failure was swallowed by `.catch(() => {})`, so `caddy validate` was
+     then invoked against a path that did not exist and reported
+     `no such file or directory`.
+  3. `writeAndReload()` turned that into *"Generated Caddyfile is invalid"* — so
+     a perfectly good config was rejected, and the error pointed at the config
+     file instead of at the missing permission.
+
+  The 1.0.8 hardening that introduced validate-before-write is what made this
+  path reachable; it was correct in intent and wrong in two details.
+
+  Staging now uses the same privileged write as the real config, and a staging
+  failure is reported as a staging failure: the error names the path, says the
+  configuration was not checked, and no longer claims the Caddyfile is invalid.
+  `validate()` returns a `reason` discriminator so `writeAndReload` can tell
+  "Caddy rejected it" from "we could not check it".
+
+- **The candidate file was left behind in `/etc/caddy`.** `sudoWriteFile` stages
+  through `sudo cp`, so anything it creates is owned by root and a plain `rm`
+  cannot remove it. Cleanup now goes through a new `sudoRemoveFile()` helper, so
+  the root-owned candidate is actually deleted rather than accumulating litter
+  that could shadow a later run.
+
+### Why the tests missed it
+
+`test/providers/caddy.test.ts` pointed the config directory at a **writable temp
+dir** and stubbed `run` to always succeed. The permission that makes this fail in
+production was never simulated, and mocking `sudoWriteFile` made the privileged
+path look like the unprivileged one.
+
+`test/providers/caddy-validate-staging.test.ts` (10) uses a genuinely read-only
+directory (`chmod 500`) and a faithful `caddy validate` stub that fails when
+pointed at a file that does not exist — which is what caddy does. Verified
+non-vacuous: reverting `validate()` to the previous behaviour fails 5 of the 10,
+and the error text comes back as
+
+    Generated Caddyfile is invalid; nothing was changed. Error: reading config
+    file: open .../Caddyfile.orkestra-candidate: no such file or directory
+
+identical to the reported failure.
+
+Also verified against the **real caddy 2.6.2 binary**, not a mock, for both SSL
+paths: a public domain yields the auto-HTTPS block, a `.test` domain yields
+`tls internal`, and no candidate file is left behind either way.
+
+Suite 498 → 508.
+
+### Note
+
+Validation now stages through sudo, so `orkestra init` and `deploy` may prompt
+for a password twice on the Caddy write path rather than once. That is the price
+of validating a candidate in the same directory as the real config, which is what
+keeps relative `import` statements working. Rejecting a valid config is a far
+worse outcome than an extra prompt.
+
+## [1.0.13] - 2026-10-04
+
+Two bugs, both found by grepping the modules that had zero coverage — which is
+the argument for covering them.
+
+### Fixed
+
+- **`orkestra start` re-implemented the port precedence a third time.** It is a
+  near-copy of `orkestra up` and carried its own chain verbatim:
+
+      start.ts:94   options.port || config?.port || existing?.port
+      start.ts:119  config?.port || framework.port
+
+  That is the exact shape that made `up.ts` and the health monitor disagree and
+  drift the port on auto-restart. Same file, same bug, waiting. It now shares
+  `deployment/dev-port.ts`.
+
+- **`registration.ts` had a fourth copy with no validity checking at all.** It
+  resolved `options?.port || config?.port` inline, then project-file detection,
+  with nothing rejecting `0`, `-1`, `70000` or a quoted value — so a config
+  carrying `port: 0` registered the project on a nonsense port. Now routed
+  through `selectDevPort`, keeping its genuinely different conflict policy: an
+  explicit `--port` is not bumped for an OS-level conflict, because the same
+  project may still be shutting down.
+
+- **The shell never actually left.** 1.0.10 removed it from `run()`, but five
+  sites kept the pattern alive using `execSync` with a template literal:
+
+      start.ts    execSync(buildCmd + " " + buildArgs.join(" "))
+      down.ts     execSync(`ps ... --ppid ${pid}`)
+      down.ts     execSync(`lsof -ti :${project.port}`)
+      laravel.ts  execSync(`readlink -f /proc/${pid}/cwd 2>/dev/null || true`)
+      laravel.ts  execSync(`lsof -ti :${port} 2>/dev/null || true`)
+
+  None was exploitable today — `buildCmd`/`buildArgs` are hardcoded literals and
+  the others interpolate numbers — but the pids and ports come from state and
+  config, and `execSync` always goes through `/bin/sh`. All five now use
+  `execFileSync` with an argv array.
+
+  Two of them needed `2>/dev/null || true` purely to swallow an error and a
+  non-zero exit, which is *why* they were written that way. `readlinkOrEmpty()`
+  and `lsofPidsOrEmpty()` do both in JS. All three validate their input, and so
+  does `getDescendants`: a non-integer pid would be read by `ps` as an option
+  rather than an argument, so it is rejected before `ps` is called.
+
+### Tests
+
+Suite 472 → 498. Coverage 32.86% → **35.41%**. `commands/start.ts` 0% → 70.27%.
+Ratchet 30/28/35/30 → 33/31/36/33.
+
+- `test/commands/start.test.ts` (19) — the port it binds, conflict migration,
+  proxy re-pointing, the build step and the foreground path.
+- `test/security/no-interpolated-shell.test.ts` (7) — encodes the distinction
+  precisely: interpolated `execSync` fails, literal `execSync` does not, because
+  `pgrep -f "rr" || true` genuinely needs a shell. Strips comments first, since
+  the guard quotes every pattern it forbids. Verified non-vacuous by restoring
+  one interpolation, which fails three of its tests.
+- The `dev-port` structural guard now covers all four resolvers and asserts none
+  re-implements the chain inline. Verified non-vacuous by restoring `start.ts`'s
+  copy.
+
 ## [1.0.12] - 2026-10-04
 
 Coverage of the two command paths the port-drift report actually travels through,

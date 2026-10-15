@@ -20,6 +20,13 @@ beforeEach(() => {
   vi.spyOn(exec, "sudoWriteFile").mockImplementation(async (filePath: string, content: string) => {
     await writeFile(filePath, content, "utf-8");
   });
+  // Cleanup goes through sudo too, because sudoWriteFile stages via `sudo cp`
+  // and the result is therefore root-owned. Mocked for the same reason as the
+  // write above: these tests must not require root.
+  vi.spyOn(exec, "sudoRemoveFile").mockImplementation(async (filePath: string) => {
+    const { rm } = await import("node:fs/promises");
+    await rm(filePath, { force: true });
+  });
   vi.spyOn(exec, "isCommandAvailable").mockResolvedValue(true);
   // Default: Caddy is running under systemd and every command succeeds, so the
   // real reload path is exercised rather than stubbed out.

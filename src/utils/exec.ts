@@ -125,6 +125,25 @@ export async function sudoWriteFile(filePath: string, content: string): Promise<
 }
 
 /**
+ * Remove a file that may be owned by root.
+ *
+ * `sudoWriteFile` stages through `sudo cp`, so anything it creates is owned by
+ * root and cannot be removed by the invoking user. Callers that write with it
+ * must clean up with this, or they leave root-owned litter behind — which is
+ * exactly what happened to the Caddy candidate config: a plain `rm` failed
+ * silently and left `/etc/caddy/Caddyfile.orkestra-candidate` behind.
+ */
+export async function sudoRemoveFile(filePath: string): Promise<void> {
+  if (isWindows()) {
+    const psCommand = `Remove-Item -LiteralPath "${filePath}" -Force -ErrorAction SilentlyContinue`;
+    spawnSync("powershell.exe", ["-Command", psCommand], { stdio: "ignore" });
+    return;
+  }
+  // `-f` so a missing file is not an error; this is cleanup.
+  spawnSync("sudo", ["rm", "-f", filePath], { stdio: "ignore" });
+}
+
+/**
  * Check if a command is available.
  * Uses 'which' on Unix, 'where.exe' on Windows.
  */
