@@ -24,9 +24,25 @@ export function lineMapsDomain(line: string, domain: string): boolean {
 }
 
 export class HostsFileProvider implements HostsProvider {
+  /**
+   * Read the hosts file, treating absence as empty.
+   *
+   * `add()` only ever appends to what it reads, so an absent file should simply
+   * produce an empty baseline rather than aborting. An unreadable-but-present
+   * file is a different problem and is reported as one — a bare `readFile`
+   * surfaced ENOENT or EACCES with no indication of which file was involved,
+   * which aborted registration with an error that named nothing.
+   */
   private async readHosts(): Promise<string> {
     const platform = getPlatform();
-    return readFile(platform.hostsFile, "utf-8");
+    try {
+      return await readFile(platform.hostsFile, "utf-8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return "";
+      throw new Error(
+        `Could not read ${platform.hostsFile}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   private async writeHosts(content: string): Promise<void> {

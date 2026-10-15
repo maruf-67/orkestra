@@ -66,7 +66,35 @@ Also verified against the **real caddy 2.6.2 binary**, not a mock, for both SSL
 paths: a public domain yields the auto-HTTPS block, a `.test` domain yields
 `tls internal`, and no candidate file is left behind either way.
 
-Suite 498 → 508.
+### Added
+
+- `test/commands/init-e2e.test.ts` (7) — drives the whole `orkestra init`
+  command: prompt defaults, `.orkestra.yml` generation, the hosts entry, state
+  registration and the proxy write. The `caddy` binary is **real**; only the
+  three things that genuinely need root are emulated (writing root-owned files,
+  removing them, reloading the service).
+
+  It asserts the outcome the field report was really about — config written,
+  hosts entry present, project registered, no candidate litter, staging and
+  cleanup paired — plus that `init` is re-runnable without duplicating the hosts
+  entry or the Caddy block, and that re-registration succeeds after an earlier
+  attempt left `.orkestra.yml`, a hosts entry and a stale candidate behind.
+
+  Verified non-vacuous twice: reverting `validate()` to a bare `writeFile` fails
+  4 of the 7, and emulating the EACCES the user hit fails all 6 behavioural
+  tests. With the failure emulated, the message is now the actionable one:
+  *"Could not validate the generated Caddyfile; nothing was changed. Could not
+  stage a candidate config at … The configuration itself has not been checked."*
+
+### Fixed
+
+- **`HostsFileProvider.readHosts()` aborted registration on any read failure.**
+  It was a bare `readFile`, so a missing or unreadable hosts file threw ENOENT or
+  EACCES with no indication of which file was involved. Absence is now treated as
+  empty — `add()` only ever appends, so that is the correct baseline — and a
+  genuinely unreadable file reports the path and the reason.
+
+Suite 508 → 515. Honest coverage 35.41% → **37.95%** statements.
 
 ### Note
 
