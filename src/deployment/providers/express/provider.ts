@@ -12,6 +12,65 @@ import type {
 import { run } from "../../../utils/exec.js";
 import { resolvePorts } from "../../ports.js";
 
+function parseSimpleEnv(content: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    result[key] = val;
+  }
+  return result;
+}
+
+function sanitizeDatabaseUrl(urlStr: string): string {
+  if (!urlStr) return urlStr;
+  const match = urlStr.match(
+    /^([a-zA-Z0-9+.-]+):\/\/([^:]+):(.*)@([^@\/:?#]+)(?::([0-9]+))?(\/[^?#]*)?(?:\?(.*))?$/
+  );
+  if (!match) return urlStr;
+  const [, protocol, user, pass, host, port, path, query] = match;
+  if (!protocol || !user || pass === undefined || !host) return urlStr;
+
+  let decodedPass = pass;
+  try {
+    decodedPass = decodeURIComponent(pass);
+  } catch {}
+  const encodedPass = encodeURIComponent(decodedPass);
+  const portPart = port ? `:${port}` : "";
+  const pathPart = path || "";
+  const queryPart = query ? `?${query}` : "";
+  let decodedUser = user;
+  try {
+    decodedUser = decodeURIComponent(user);
+  } catch {}
+  return `${protocol}://${encodeURIComponent(decodedUser)}:${encodedPass}@${host}${portPart}${pathPart}${queryPart}`;
+}
+
+function resolveDatabaseUrl(envMap: Record<string, string>): string | undefined {
+  if (envMap.DATABASE_URL && envMap.DATABASE_URL.trim() !== "") {
+    return sanitizeDatabaseUrl(envMap.DATABASE_URL.trim());
+  }
+  if (envMap.DB_HOST || envMap.DB_PASSWORD || envMap.DB_DATABASE || envMap.DB_USERNAME) {
+    const rawConn = envMap.DB_CONNECTION || "pgsql";
+    const conn = rawConn === "pgsql" || rawConn === "postgres" ? "postgresql" : rawConn;
+    const user = encodeURIComponent(envMap.DB_USERNAME || "postgres");
+    const pass = envMap.DB_PASSWORD ? `:${encodeURIComponent(envMap.DB_PASSWORD)}` : "";
+    const host = envMap.DB_HOST || "127.0.0.1";
+    const port = envMap.DB_PORT || "5432";
+    const db = envMap.DB_DATABASE || "portfolio_db";
+    const schema = envMap.DB_SCHEMA || "public";
+    return `${conn}://${user}${pass}@${host}:${port}/${db}?schema=${schema}`;
+  }
+  return undefined;
+}
+
 export class ExpressProvider implements ApplicationProvider {
   readonly name = "express";
   readonly framework = "express";
@@ -128,10 +187,23 @@ export class ExpressProvider implements ApplicationProvider {
     const hasPrisma = existsSync(schemaPath);
 
     if (hasPrisma) {
+      let envOverrides: Record<string, string> | undefined;
+      const envPath = join(context.projectDir, ".env");
+      if (existsSync(envPath)) {
+        try {
+          const envContent = await readFile(envPath, "utf-8");
+          const parsed = parseSimpleEnv(envContent);
+          const resolvedDbUrl = resolveDatabaseUrl(parsed);
+          if (resolvedDbUrl) {
+            envOverrides = { DATABASE_URL: resolvedDbUrl };
+          }
+        } catch {}
+      }
+
       // 1. Prisma Generate
-      const genRes = await run(runner, ["prisma", "generate"], { cwd: context.projectDir });
+      const genRes = await run(runner, ["prisma", "generate"], { cwd: context.projectDir, env: envOverrides });
       if (genRes.exitCode !== 0) {
-        const fallbackGen = await run("npx", ["prisma", "generate"], { cwd: context.projectDir });
+        const fallbackGen = await run("npx", ["prisma", "generate"], { cwd: context.projectDir, env: envOverrides });
         if (fallbackGen.exitCode !== 0) {
           throw new Error(`Prisma generate failed:\n${fallbackGen.stderr || fallbackGen.stdout || genRes.stderr}`);
         }
@@ -150,9 +222,9 @@ export class ExpressProvider implements ApplicationProvider {
         const hasMigrations = existsSync(migrationsDir);
 
         if (hasMigrations) {
-          const migRes = await run(runner, ["prisma", "migrate", "deploy"], { cwd: context.projectDir });
+          const migRes = await run(runner, ["prisma", "migrate", "deploy"], { cwd: context.projectDir, env: envOverrides });
           if (migRes.exitCode !== 0) {
-            const fallbackMig = await run("npx", ["prisma", "migrate", "deploy"], { cwd: context.projectDir });
+            const fallbackMig = await run("npx", ["prisma", "migrate", "deploy"], { cwd: context.projectDir, env: envOverrides });
             if (fallbackMig.exitCode !== 0) {
               throw new Error(`Prisma migrate deploy failed:\n${fallbackMig.stderr || fallbackMig.stdout || migRes.stderr}`);
             }
@@ -162,9 +234,9 @@ export class ExpressProvider implements ApplicationProvider {
           }
         } else {
           // If no migrations folder exists, push schema definitions to database
-          const pushRes = await run(runner, ["prisma", "db", "push", "--skip-generate"], { cwd: context.projectDir });
+          const pushRes = await run(runner, ["prisma", "db", "push", "--skip-generate"], { cwd: context.projectDir, env: envOverrides });
           if (pushRes.exitCode !== 0) {
-            const fallbackPush = await run("npx", ["prisma", "db", "push", "--skip-generate"], { cwd: context.projectDir });
+            const fallbackPush = await run("npx", ["prisma", "db", "push", "--skip-generate"], { cwd: context.projectDir, env: envOverrides });
             if (fallbackPush.exitCode !== 0) {
               throw new Error(`Prisma db push failed:\n${fallbackPush.stderr || fallbackPush.stdout || pushRes.stderr}`);
             }
@@ -177,7 +249,7 @@ export class ExpressProvider implements ApplicationProvider {
 
       // 3. Optional Database Seed
       if (context.config?.deployment?.database?.seed) {
-        await run(runner, ["prisma", "db", "seed"], { cwd: context.projectDir }).catch(() => {});
+        await run(runner, ["prisma", "db", "seed"], { cwd: context.projectDir, env: envOverrides }).catch(() => {});
       }
     }
 

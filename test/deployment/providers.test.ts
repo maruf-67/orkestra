@@ -88,4 +88,24 @@ describe("Application Providers Architecture", () => {
     expect(resolved?.provider.framework).toBe("laravel");
     expect(resolved?.detection.framework).toBe("laravel");
   });
+
+  it("handles unencoded special characters in database URL for Prisma", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "ork-express-prisma-env-"));
+    const pkg = {
+      name: "my-express-api",
+      dependencies: {
+        express: "^5.0.0",
+        "@prisma/client": "^6.0.0",
+      },
+    };
+    await writeFile(join(tmp, "package.json"), JSON.stringify(pkg, null, 2));
+    await writeFile(join(tmp, "bun.lock"), "");
+    // Raw database URL with unencoded special characters in password
+    const envRaw = 'DATABASE_URL="postgresql://maruf_user:h6#@!mLgdf2aEPxZRd8EXXJHeuAx@localhost:5432/maruf_db?schema=public"\n';
+    await writeFile(join(tmp, ".env"), envRaw);
+
+    const provider = new ExpressProvider();
+    const detection = await provider.detect(tmp);
+    expect(detection?.capabilities.hasPrisma).toBe(true);
+  });
 });
