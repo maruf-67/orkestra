@@ -2,6 +2,7 @@ import type { ApplicationProvider, ApplicationDetection } from "./types.js";
 import { LaravelProvider } from "./laravel/provider.js";
 import { NextjsProvider } from "./nextjs/provider.js";
 import { NuxtProvider } from "./nuxt/provider.js";
+import { ExpressProvider } from "./express/provider.js";
 
 export class ProviderRegistry {
   private providers: ApplicationProvider[] = [];
@@ -10,6 +11,7 @@ export class ProviderRegistry {
     this.register(new LaravelProvider());
     this.register(new NextjsProvider());
     this.register(new NuxtProvider());
+    this.register(new ExpressProvider());
   }
 
   register(provider: ApplicationProvider): void {

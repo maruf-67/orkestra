@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { LaravelProvider } from "../../src/deployment/providers/laravel/provider.js";
 import { NextjsProvider } from "../../src/deployment/providers/nextjs/provider.js";
 import { NuxtProvider } from "../../src/deployment/providers/nuxt/provider.js";
+import { ExpressProvider } from "../../src/deployment/providers/express/provider.js";
 import { providerRegistry } from "../../src/deployment/providers/registry.js";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -47,6 +48,29 @@ describe("Application Providers Architecture", () => {
     expect(detection).not.toBeNull();
     expect(detection?.framework).toBe("nuxt");
     expect(detection?.packageManager).toBe("pnpm");
+  });
+
+  it("detects Express application with Bun and Prisma capabilities", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "ork-express-bun-"));
+    const pkg = {
+      name: "my-express-api",
+      dependencies: {
+        express: "^5.0.0",
+        "@prisma/client": "^6.0.0",
+      },
+    };
+    await writeFile(join(tmp, "package.json"), JSON.stringify(pkg, null, 2));
+    await writeFile(join(tmp, "bun.lock"), "");
+
+    const provider = new ExpressProvider();
+    const detection = await provider.detect(tmp);
+
+    expect(detection).not.toBeNull();
+    expect(detection?.framework).toBe("express");
+    expect(detection?.packageManager).toBe("bun");
+    expect(detection?.runtime).toBe("bun");
+    expect(detection?.defaultPort).toBe(4000);
+    expect(detection?.capabilities.hasPrisma).toBe(true);
   });
 
   it("dynamically resolves provider from registry", async () => {

@@ -180,7 +180,7 @@ export async function start(options: StartOptions) {
       } else if (existsSync(resolve(projectDir, "yarn.lock"))) {
         buildCmd = "yarn";
         buildArgs = ["run", "build"];
-      } else if (existsSync(resolve(projectDir, "bun.lockb"))) {
+      } else if (existsSync(resolve(projectDir, "bun.lockb")) || existsSync(resolve(projectDir, "bun.lock"))) {
         buildCmd = "bun";
         buildArgs = ["run", "build"];
       } else {
@@ -217,7 +217,7 @@ export async function start(options: StartOptions) {
       } else if (existsSync(resolve(projectDir, "yarn.lock"))) {
         execArgs = ["--", execCmd, ...execArgs];
         execCmd = "yarn";
-      } else if (existsSync(resolve(projectDir, "bun.lockb"))) {
+      } else if (existsSync(resolve(projectDir, "bun.lockb")) || existsSync(resolve(projectDir, "bun.lock"))) {
         execArgs = [execCmd, ...execArgs];
         execCmd = "bun";
       } else {

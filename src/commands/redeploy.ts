@@ -210,7 +210,17 @@ export async function redeploy(options: RedeployOptions) {
         throw err;
       }
     } else {
-      // Node / Nuxt / Next: stop → build → start (no proxy change)
+      // Node / Nuxt / Next / Express: prepare (migrations, prisma) → stop → build → start
+      const prepSpin = spinner(`Preparing application (${detection.framework})...`);
+      prepSpin.start();
+      try {
+        await provider.prepare(context);
+        prepSpin.succeed("Application preparation completed");
+      } catch (err: any) {
+        prepSpin.fail(`Preparation failed: ${err.message}`);
+        throw err;
+      }
+
       const webService = systemd.getServiceName(projectName, "web");
 
       if (!options.skipBuild) {
