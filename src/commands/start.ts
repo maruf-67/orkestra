@@ -41,7 +41,7 @@ async function getProductionCommand(
     }
   }
 
-  if (["next.js", "nuxt", "node.js", "vite", "astro", "sveltekit"].includes(frameworkName)) {
+  if (["next.js", "nuxt", "node.js", "express", "fastify", "remix", "vite", "astro", "sveltekit"].includes(frameworkName)) {
     try {
       const pkg = JSON.parse(await readFile(resolve(dir, "package.json"), "utf-8"));
       const scripts = pkg.scripts || {};

@@ -266,7 +266,7 @@ export async function up(options: UpOptions) {
       } else if (existsSync(resolve(projectDir, "yarn.lock"))) {
         execArgs = ["--", execCmd, ...execArgs];
         execCmd = "yarn";
-      } else if (existsSync(resolve(projectDir, "bun.lockb"))) {
+      } else if (existsSync(resolve(projectDir, "bun.lockb")) || existsSync(resolve(projectDir, "bun.lock"))) {
         execArgs = [execCmd, ...execArgs];
         execCmd = "bun";
       } else {
@@ -376,6 +376,15 @@ export async function up(options: UpOptions) {
           message: line,
         });
       }
+    });
+
+    // Handle process error
+    child.on("error", (err: Error) => {
+      writeLog(projectDir, projectName, {
+        timestamp: new Date(),
+        stream: "stderr",
+        message: `[Process error: ${err.message}]`,
+      });
     });
 
     // Handle process exit

@@ -201,8 +201,37 @@ export class HealthMonitor {
         });
       }
 
+      // Resolve package manager for npx/pnpm exec
+      let execCmd = command.cmd;
+      let execArgs = [...command.args];
+
+      const needsExec = ["next", "nuxt", "vite", "remix", "astro", "svelte"].some(b => execCmd.startsWith(b));
+      if (needsExec) {
+        try {
+          const { existsSync } = await import("node:fs");
+          const { resolve } = await import("node:path");
+          if (existsSync(resolve(projectPath, "pnpm-lock.yaml"))) {
+            execArgs = [execCmd, ...execArgs];
+            execCmd = "pnpm";
+            execArgs.unshift("exec");
+          } else if (existsSync(resolve(projectPath, "yarn.lock"))) {
+            execArgs = ["--", execCmd, ...execArgs];
+            execCmd = "yarn";
+          } else if (existsSync(resolve(projectPath, "bun.lockb")) || existsSync(resolve(projectPath, "bun.lock"))) {
+            execArgs = [execCmd, ...execArgs];
+            execCmd = "bun";
+          } else {
+            execArgs = ["--yes", execCmd, ...execArgs];
+            execCmd = "npx";
+          }
+        } catch {
+          execArgs = ["--yes", execCmd, ...execArgs];
+          execCmd = "npx";
+        }
+      }
+
       // Spawn process
-      const child = spawn(command.cmd, command.args, {
+      const child = spawn(execCmd, execArgs, {
         cwd: projectPath,
         stdio: "pipe",
         detached: true,
@@ -210,6 +239,14 @@ export class HealthMonitor {
           ...process.env,
           PORT: String(port),
         },
+      });
+
+      child.on("error", (err: Error) => {
+        writeLog(projectPath, projectName, {
+          timestamp: new Date(),
+          stream: "stderr",
+          message: `[Process spawn error: ${err.message}]`,
+        });
       });
 
       child.unref();
