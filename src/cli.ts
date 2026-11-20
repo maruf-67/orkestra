@@ -159,10 +159,10 @@ export function run() {
     .action(init);
 
   program
-    .command("remove")
+    .command("remove [project]")
     .description("Remove project from proxy, hosts, certs, logs, and config")
     .option("-d, --dir <path>", "Project directory")
-    .action(remove);
+    .action((project, options) => remove({ ...options, project }));
 
   program
     .command("list")

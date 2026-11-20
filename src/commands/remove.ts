@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { log, spinner, heading } from "../utils/logger.js";
 import { HostsFileProvider } from "../providers/hosts/hosts.js";
-import { getProject, unregisterProject } from "../state/store.js";
+import { getProject, unregisterProject, listProjects, type ProjectState } from "../state/store.js";
 import { detectProxy } from "../detection/proxy.js";
 import { run } from "../utils/exec.js";
 import { isWindows, isLinux } from "../platform/index.js";
@@ -13,16 +13,43 @@ import { parse as parseYaml } from "yaml";
 
 interface RemoveOptions {
   dir?: string;
+  project?: string;
 }
 
-export async function remove(options: RemoveOptions) {
-  const projectDir = resolve(options.dir || process.cwd());
-
+export async function remove(options: RemoveOptions = {}) {
   heading("Remove Project");
 
-  const project = await getProject(projectDir);
+  let projectDir: string = resolve(options.dir || process.cwd());
+  let project: ProjectState | null = null;
+
+  if (options.project) {
+    const allProjects = await listProjects();
+    const match = allProjects.find(
+      (p) =>
+        p.name.toLowerCase() === options.project!.toLowerCase() ||
+        p.domain.toLowerCase() === options.project!.toLowerCase() ||
+        p.path.toLowerCase().includes(options.project!.toLowerCase())
+    );
+    if (match) {
+      project = match;
+      projectDir = match.path;
+    }
+  }
+
   if (!project) {
-    log.error("Project not registered. Run `orkestra init` first.");
+    project = await getProject(projectDir);
+  }
+
+  if (!project) {
+    const allProjects = await listProjects();
+    const match = allProjects.find((p) => p.path === projectDir);
+    if (match) {
+      project = match;
+    }
+  }
+
+  if (!project) {
+    log.error(`Project not registered: ${options.project || projectDir}. Run \`orkestra list\` to view registered projects.`);
     process.exit(1);
   }
 
